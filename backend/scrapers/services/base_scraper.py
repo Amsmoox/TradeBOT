@@ -135,11 +135,16 @@ class BaseScraper:
         """
         if processed_text is None and html_content:
             processed_text = self.process_text(html_content)
+            is_processed = True
+        else:
+            is_processed = processed_text is not None
             
         scraped_data = ScrapedData(
             content_html=html_content,
             content_text=processed_text,
-            source_url=source_url
+            source_url=source_url,
+            status='success',
+            is_processed=is_processed
         )
         scraped_data.save()
         logger.info(f"Saved scraped data from {source_url}")
