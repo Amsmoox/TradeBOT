@@ -4,7 +4,7 @@ This document outlines the structure of the TradeBot project, detailing the purp
 
 ## Overview
 
-TradeBot is a Django-based application designed to scrape forex trading signals from websites like FX Leaders and expose them through an API that can be connected to a Telegram bot.
+TradeBot is a Django-based application designed to scrape forex trading signals from websites like FX Leaders and expose them through an API that can be connected to a Telegram bot. The system automatically sends scraped signals to users via Telegram.
 
 ## Project Structure
 
@@ -23,26 +23,39 @@ TradeBOT/
     │   ├── settings.py     # Django project settings
     │   ├── urls.py         # Main URL routing configuration
     │   └── wsgi.py         # WSGI configuration for web servers
-    └── scrapers/           # Django app for scraping forex signals
+    ├── scrapers/           # Django app for scraping forex signals
+    │   ├── __init__.py     # Python package marker
+    │   ├── admin.py        # Django admin site configuration
+    │   ├── api.py          # REST API viewsets and logic
+    │   ├── apps.py         # Django app configuration
+    │   ├── models.py       # Database models for scraped data
+    │   ├── serializers.py  # DRF serializers for API data
+    │   ├── tests.py        # Testing module
+    │   ├── urls.py         # URL routing for the scrapers app
+    │   ├── views.py        # Django views (mostly empty, API uses api.py)
+    │   ├── migrations/     # Database migrations
+    │   ├── services/       # Service modules for business logic
+    │   │   ├── __init__.py  # Python package marker
+    │   │   ├── base_scraper.py  # Base scraper class with core functionality
+    │   │   └── fxleaders_scraper.py  # FX Leaders specific scraper implementation
+    │   └── management/     # Custom Django management commands
+    │       ├── __init__.py
+    │       └── commands/   # Custom management commands directory
+    │           ├── __init__.py
+    │           └── scrape_fxleaders.py  # Command to scrape FX Leaders website
+    └── messaging/          # Django app for sending signals to messaging platforms
         ├── __init__.py     # Python package marker
         ├── admin.py        # Django admin site configuration
-        ├── api.py          # REST API viewsets and logic
         ├── apps.py         # Django app configuration
-        ├── models.py       # Database models for scraped data
-        ├── serializers.py  # DRF serializers for API data
+        ├── models.py       # Database models (minimal, using scrapers models)
+        ├── serializers.py  # Serializers for signal messages
         ├── tests.py        # Testing module
-        ├── urls.py         # URL routing for the scrapers app
-        ├── views.py        # Django views (mostly empty, API uses api.py)
+        ├── urls.py         # URL routing for messaging endpoints
+        ├── views.py        # Views for message delivery endpoints
+        ├── README.md       # Documentation for the messaging app
         ├── migrations/     # Database migrations
-        ├── services/       # Service modules for business logic
-        │   ├── __init__.py  # Python package marker
-        │   ├── base_scraper.py  # Base scraper class with core functionality
-        │   └── fxleaders_scraper.py  # FX Leaders specific scraper implementation
-        └── management/     # Custom Django management commands
-            ├── __init__.py
-            └── commands/   # Custom management commands directory
-                ├── __init__.py
-                └── scrape_fxleaders.py  # Command to scrape FX Leaders website
+        └── services/       # Messaging service modules
+            └── telegram_bot.py  # Telegram bot messaging service
 ```
 
 ## Key Components
@@ -60,6 +73,19 @@ TradeBOT/
   - `ForexSignalViewSet`: Provides endpoints for listing forex signals and special actions like `latest` and `by_instrument`.
 - **serializers.py**: Defines how model data is converted to JSON for the API.
 - **urls.py**: Maps API URLs to viewsets.
+
+### Messaging App
+
+- **views.py**: Contains view functions for messaging endpoints:
+  - `send_telegram_alert`: Handles manual alert sending to Telegram
+  - `fetch_and_send_signals`: Fetches the latest forex signals from the database and sends them to Telegram
+- **services/telegram_bot.py**: Implementation of the Telegram bot service for sending messages:
+  - Handles authentication with the Telegram API
+  - Formats and sends messages to configured chat IDs
+  - Handles error reporting and logging
+- **urls.py**: Maps messaging endpoints to the appropriate views:
+  - `/api/telegram/send-alert/`: Endpoint for manual alert sending
+  - `/api/telegram/send-signals/`: Endpoint to trigger sending the latest signals
 
 ### Scraper Services
 
@@ -97,23 +123,22 @@ The API provides the following endpoints:
 - `GET /api/forex-signals/latest/`: Get the 5 most recent signals
 - `GET /api/forex-signals/by_instrument/?name=<instrument>`: Filter signals by instrument name (e.g., EURUSD)
 
-## Scraping Workflow
+### Messaging Endpoints
 
-1. The `scrape_fxleaders.py` command initializes the `FXLeadersScraper` class
-2. The scraper authenticates to FX Leaders using Selenium
-3. It navigates to the signals page and waits for dynamic content to load
-4. The scraper extracts signal data including instrument name, action, prices, and status
-5. Extracted data is formatted for easy reading
-6. If not in print-only mode, signals are saved to the database using the `ScrapedData` model
-7. The API can then serve these signals to external clients (like a Telegram bot)
+- `POST /api/telegram/send-alert/`: Send a manual alert to the Telegram channel
+- `GET /api/telegram/send-signals/`: Fetch the latest forex signals and send them to the Telegram channel
+
+## Complete Workflow
+
+1. The `scrape_fxleaders.py` command scrapes forex signals from FX Leaders website
+2. Scraped signals are stored in the database using the `ScrapedData` model
+3. The REST API exposes these signals through its endpoints
+4. The messaging app fetches the latest signals directly from the database
+5. Signals are formatted with Telegram-compatible HTML markup
+6. The TelegramBot service sends these signals to the configured Telegram channel/group
+7. Users receive real-time forex signals with entry prices, stop-loss, and take-profit levels
 
 ## Usage
-
-The backend is designed to:
-1. Scrape forex trading signals using the custom management command
-2. Store the signals in the database
-3. Expose the data through the REST API
-4. Allow a Telegram bot to connect to the API endpoints to deliver signals to users
 
 ### Running the Scraper
 
@@ -131,6 +156,28 @@ python manage.py scrape_fxleaders --debug
 python manage.py scrape_fxleaders --timing
 ```
 
+### Sending Signals to Telegram
+
+After scraping signals, you can send them to Telegram using:
+
+```bash
+# Using curl to call the API endpoint
+curl -X GET http://localhost:8000/api/telegram/send-signals/
+
+# Or schedule it with cron for automated delivery
+# Example cron entry (runs every hour)
+# 0 * * * * curl -X GET http://your-server.com/api/telegram/send-signals/
+```
+
+## Required Environment Variables
+
+- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token from BotFather
+- `TELEGRAM_CHAT_ID`: The chat ID where signals should be sent
+- `FXLEADERS_USERNAME`: Username for FX Leaders (if using premium features)
+- `FXLEADERS_PASSWORD`: Password for FX Leaders (if using premium features)
+- `FXLEADERS_LOGIN_URL`: Login URL for FX Leaders
+- `FXLEADERS_SIGNALS_URL`: URL for the forex signals page
+
 ## Development
 
 The project uses:
@@ -138,4 +185,5 @@ The project uses:
 - Django REST Framework for the API
 - PostgreSQL as the database (configured in settings.py)
 - Selenium and BeautifulSoup for web scraping
+- Telegram Bot API for signal delivery
 - Custom management commands for scheduled tasks
