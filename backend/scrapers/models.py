@@ -31,3 +31,37 @@ class ScrapedData(models.Model):
         ordering = ['-scrape_date']
         verbose_name = "Forex Signal"
         verbose_name_plural = "Forex Signals"
+
+class EconomicEvent(models.Model):
+    CURRENCY_CHOICES = [
+        ('USD', 'US Dollar'),
+        ('GBP', 'British Pound'),
+        ('JPY', 'Japanese Yen'),
+        ('EUR', 'Euro'),
+    ]
+    
+    IMPACT_CHOICES = [
+        ('HIGH', 'High Impact'),
+        ('MED', 'Medium Impact'),
+        ('LOW', 'Low Impact'),
+    ]
+    
+    day = models.DateField()
+    time = models.CharField(max_length=10)  # Store as string since we might have "All Day" events
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES)
+    event_name = models.CharField(max_length=255)
+    impact = models.CharField(max_length=4, choices=IMPACT_CHOICES)
+    actual = models.CharField(max_length=50, blank=True, null=True)
+    forecast = models.CharField(max_length=50, blank=True, null=True)
+    previous = models.CharField(max_length=50, blank=True, null=True)
+    
+    # Additional metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['day', 'time', 'currency', 'event_name']  # Prevent duplicates
+        ordering = ['day', 'time']
+    
+    def __str__(self):
+        return f"{self.day} {self.time} - {self.currency} - {self.event_name}"
