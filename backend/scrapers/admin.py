@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import ScrapedData
+from .models import ScrapedData, EconomicEvent
 
 @admin.register(ScrapedData)
 class ScrapedDataAdmin(admin.ModelAdmin):
@@ -46,3 +46,10 @@ class ScrapedDataAdmin(admin.ModelAdmin):
             emoji, status_emoji, action_color, obj.action, obj.instrument
         )
     signal_display.short_description = "Signal"
+
+@admin.register(EconomicEvent)
+class EconomicEventAdmin(admin.ModelAdmin):
+    list_display = ('day', 'time', 'currency', 'event_name', 'impact', 'actual', 'forecast')
+    search_fields = ('day', 'time', 'currency', 'event_name', 'impact', 'actual', 'forecast')
+    list_filter = ('day', 'time', 'currency', 'impact')
+
