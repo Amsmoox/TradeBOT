@@ -7,6 +7,8 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from bs4 import BeautifulSoup
 import requests
+from datetime import datetime
+from scrapers.models import EconomicEvent
 
 # Selenium imports
 from selenium import webdriver
@@ -25,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = 'Scrape economic calendar events from BabyPips'
+
+    ALLOWED_CURRENCIES = ['USD', 'GBP', 'JPY', 'EUR']
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -72,7 +76,10 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR('Failed to scrape events from BabyPips Economic Calendar'))
                 return
             
-            self.stdout.write(self.style.SUCCESS(f"Successfully scraped {len(events)} economic events"))
+            # Filter and save events
+            saved_count = self.save_events(events)
+            
+            self.stdout.write(self.style.SUCCESS(f"Successfully scraped and saved {saved_count} economic events"))
             
             # Print formatted events
             self.print_formatted_events(events)
@@ -242,17 +249,15 @@ class Command(BaseCommand):
             }
             
             # Extract data based on column position
-            # Typical columns: Time | Currency | Event | Impact | Actual | Forecast | Previous
-            
-            # Time
             if len(cells) > 0:
                 event['time'] = cells[0].text.strip()
                 
-            # Currency
             if len(cells) > 1:
                 event['currency'] = cells[1].text.strip()
+                # Skip if not in allowed currencies
+                if event['currency'] not in self.ALLOWED_CURRENCIES:
+                    return None
                 
-            # Event name - extract from the link text if possible
             if len(cells) > 2:
                 event_cell = cells[2]
                 event_link = event_cell.find('a')
@@ -261,7 +266,6 @@ class Command(BaseCommand):
                 else:
                     event['event_name'] = event_cell.text.strip()
             
-            # Impact
             if len(cells) > 3:
                 impact_text = cells[3].text.strip().lower()
                 if impact_text:
@@ -275,15 +279,12 @@ class Command(BaseCommand):
                     elif 'low' in str(cells[3]).lower():
                         event['impact'] = 'low'
             
-            # Actual
             if len(cells) > 4:
                 event['actual'] = cells[4].text.strip()
                 
-            # Forecast
             if len(cells) > 5:
                 event['forecast'] = cells[5].text.strip()
                 
-            # Previous
             if len(cells) > 6:
                 event['previous'] = cells[6].text.strip()
             
@@ -335,4 +336,52 @@ class Command(BaseCommand):
                 
             # Print the event
             self.stdout.write(event_str)
-            self.stdout.write("-" * 50) 
+            self.stdout.write("-" * 50)
+    
+    def save_events(self, events):
+        """Save events to database after filtering for allowed currencies"""
+        saved_count = 0
+        for event in events:
+            # Skip events for currencies we don't want
+            if event['currency'] not in self.ALLOWED_CURRENCIES:
+                continue
+                
+            try:
+                # Parse the date correctly from format like "May27Tuesday"
+                day_str = event['day']
+                # Extract month and day
+                month = day_str[:3]  # Get first 3 chars (May)
+                day = ''.join(filter(str.isdigit, day_str))  # Extract numbers (27)
+                
+                # Create date string and parse
+                date_str = f"{month} {day}"
+                day_date = datetime.strptime(date_str, '%b %d').replace(year=datetime.now().year)
+                
+                # Clean impact level
+                impact = event['impact'].upper() if event['impact'] else 'LOW'
+                if impact not in ['HIGH', 'MED', 'LOW']:
+                    impact = 'LOW'
+                
+                # Clean the previous value (remove asterisk if present)
+                previous = event['previous'].replace('*', '') if event['previous'] else None
+                
+                # Create or update the event
+                economic_event, created = EconomicEvent.objects.update_or_create(
+                    day=day_date,
+                    time=event['time'],
+                    currency=event['currency'],
+                    event_name=event['event_name'],
+                    defaults={
+                        'impact': impact,
+                        'actual': event['actual'] or None,
+                        'forecast': event['forecast'] or None,
+                        'previous': previous
+                    }
+                )
+                saved_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error saving event {event}: {str(e)}")
+                continue
+                
+        return saved_count 
