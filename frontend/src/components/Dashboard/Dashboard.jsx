@@ -1,6 +1,6 @@
-
+// src/components/dashboard/Dashboard.jsx
 import React, { useEffect, useState } from 'react';
-import { fetchSignals, fetchEvents, fetchNews } from '../../hooks/api';
+import { fetchSignals, fetchEvents, fetchNews } from '../../hooks/useApi';
 
 const Dashboard = () => {
   const [signals, setSignals] = useState([]);
