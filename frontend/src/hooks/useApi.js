@@ -14,4 +14,3 @@ const fetchData = async (endpoint) => {
 
 export const fetchSignals = () => fetchData('signals');
 export const fetchEvents = () => fetchData('events');
-export const fetchNews = () => fetchData('news');
