@@ -24,6 +24,9 @@ class ScrapedData(models.Model):
     stop_loss = models.CharField(max_length=20, help_text="Stop loss price", blank=True)
     status_signal = models.CharField(max_length=20, help_text="Signal status (Active, Closed, etc.)", blank=True)
     
+    # Hash for duplicate detection
+    signal_hash = models.CharField(max_length=64, db_index=True, help_text="Hash for duplicate detection", blank=True)
+    
     def __str__(self):
         return f"{self.action} {self.instrument} @ {self.entry_price} on {self.scrape_date.strftime('%Y-%m-%d %H:%M')}"
     
@@ -31,6 +34,46 @@ class ScrapedData(models.Model):
         ordering = ['-scrape_date']
         verbose_name = "Forex Signal"
         verbose_name_plural = "Forex Signals"
+
+class ScrapingWatermark(models.Model):
+    """Model to track scraping progress and avoid duplicate fetches"""
+    source = models.CharField(
+        max_length=50, 
+        unique=True, 
+        help_text="Source identifier (e.g., 'fxleaders')"
+    )
+    last_timestamp = models.DateTimeField(
+        null=True, 
+        blank=True, 
+        help_text='Last successful scrape timestamp'
+    )
+    last_etag = models.CharField(
+        max_length=255, 
+        blank=True, 
+        help_text='Last ETag from HTTP response'
+    )
+    last_modified = models.CharField(
+        max_length=255, 
+        blank=True, 
+        help_text='Last-Modified header from HTTP response'
+    )
+    scrape_interval = models.IntegerField(
+        default=60, 
+        help_text='Current scraping interval in seconds'
+    )
+    consecutive_no_changes = models.IntegerField(
+        default=0, 
+        help_text='Count of consecutive scrapes with no changes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Watermark for {self.source} - Last: {self.last_timestamp}"
+    
+    class Meta:
+        verbose_name = 'Scraping Watermark'
+        verbose_name_plural = 'Scraping Watermarks'
 
 class EconomicEvent(models.Model):
     CURRENCY_CHOICES = [
