@@ -1,0 +1,4 @@
+celery[redis]==5.3.4
+django-celery-beat==2.5.0
+redis==5.0.1
+kombu==5.3.4 

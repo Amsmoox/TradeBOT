@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'django_celery_beat',  # For periodic tasks
     'scrapers',
     'messaging',
 ]
@@ -134,6 +135,50 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ===========================
+# CELERY CONFIGURATION
+# ===========================
+
+# Redis as Celery broker (you can also use RabbitMQ)
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+
+# Celery task settings
+CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# Celery Beat settings for periodic tasks
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Task routing (optional - for organizing tasks)
+CELERY_TASK_ROUTES = {
+    'scrapers.tasks.*': {'queue': 'scraping'},
+    'messaging.tasks.*': {'queue': 'messaging'},
+}
+
+# Worker settings
+CELERY_WORKER_CONCURRENCY = int(os.environ.get('CELERY_WORKER_CONCURRENCY', '2'))
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# Task time limits (prevent hanging tasks)
+CELERY_TASK_SOFT_TIME_LIMIT = 300  # 5 minutes
+CELERY_TASK_TIME_LIMIT = 360       # 6 minutes
+
+# Enable UTC
+CELERY_ENABLE_UTC = True
+
+# ===========================
+# PERIODIC TASK SETTINGS
+# ===========================
+
+# Default scraping interval (can be overridden by watermark logic)
+DEFAULT_SCRAPING_INTERVAL = int(os.environ.get('DEFAULT_SCRAPING_INTERVAL', '120'))  # 120 seconds (2 minutes)
+
+# Auto-create periodic tasks on startup
+AUTO_CREATE_PERIODIC_TASKS = os.environ.get('AUTO_CREATE_PERIODIC_TASKS', 'True') == 'True'
+
 # Logging configuration
 LOGGING = {
     'version': 1,
@@ -160,10 +205,26 @@ LOGGING = {
             'filename': os.path.join(BASE_DIR, 'logs/scraper.log'),
             'formatter': 'verbose',
         },
+        'celery_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs/celery.log'),
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'scrapers': {
             'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'celery': {
+            'handlers': ['console', 'celery_file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'celery.task': {
+            'handlers': ['console', 'celery_file'],
             'level': 'INFO',
             'propagate': True,
         },

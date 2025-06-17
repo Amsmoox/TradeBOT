@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import hashlib
 from bs4 import BeautifulSoup
 from .base_scraper import BaseScraper
 import time
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class FXLeadersScraper(BaseScraper):
     """
-    Optimized scraper for FX Leaders forex signals.
+    Optimized scraper for FX Leaders forex signals with intelligent delta-scraping.
     """
     
     def __init__(self):
@@ -34,7 +35,7 @@ class FXLeadersScraper(BaseScraper):
         else:
             base_url = 'https://www.fxleaders.com'
             
-        super().__init__(base_url)
+        super().__init__(base_url, source_name='fxleaders')
         self.login_url = login_url
         self.signals_url = signals_url
         self.driver = None
@@ -69,6 +70,7 @@ class FXLeadersScraper(BaseScraper):
             options.add_argument("--disable-gpu")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--headless")  # Run in headless mode (no visual browser)
             options.add_argument("--window-size=1366,768")  # Smaller window size
             options.add_argument("--disable-extensions")
             
@@ -323,3 +325,185 @@ class FXLeadersScraper(BaseScraper):
         
         print(f"Successfully extracted {len(formatted_signals)} signals")
         return formatted_signals 
+
+    def delta_scrape_forex_signals(self):
+        """
+        Intelligent delta-scraping with duplicate detection and conditional HTTP requests
+        """
+        print("🚀 Starting intelligent delta-scrape for FX Leaders...")
+        
+        # Check if authentication is needed
+        if not self.logged_in:
+            print("🔐 Authentication required...")
+            if not self.authenticate():
+                print("❌ Authentication failed")
+                return {
+                    'success': False,
+                    'new_signals': 0,
+                    'duplicates_skipped': 0,
+                    'error': 'Authentication failed'
+                }
+        
+        try:
+            if self.driver:
+                # For Selenium, we can't use conditional headers directly
+                # but we can still check for changes and avoid duplicate processing
+                return self._delta_scrape_with_selenium()
+            else:
+                # Use conditional HTTP requests for non-Selenium scraping
+                return self._delta_scrape_with_requests()
+                
+        except Exception as e:
+            error_msg = f"Error during delta-scraping: {str(e)}"
+            logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'new_signals': 0,
+                'duplicates_skipped': 0,
+                'error': error_msg
+            }
+        finally:
+            # Always close Selenium driver
+            if self.driver:
+                self.driver.quit()
+                self.driver = None
+    
+    def _delta_scrape_with_selenium(self):
+        """Delta scraping using Selenium (for authenticated pages)"""
+        print("🌐 Using Selenium for authenticated delta-scraping...")
+        
+        # Navigate to signals page
+        print(f"📍 Navigating to: {self.signals_url}")
+        self.driver.get(self.signals_url)
+        
+        # Wait for page to load
+        time.sleep(5)
+        
+        # Get page source and process
+        html_content = self.driver.page_source
+        signals = self._extract_signals(html_content)
+        
+        if not signals:
+            print("⚠️  No signals found")
+            self.update_watermark(new_signals_count=0)
+            return {
+                'success': True,
+                'new_signals': 0,
+                'duplicates_skipped': 0,
+                'message': 'No signals found'
+            }
+        
+        # Process signals with duplicate detection
+        return self._process_signals_with_duplicate_detection(signals)
+    
+    def _delta_scrape_with_requests(self):
+        """Delta scraping using conditional HTTP requests"""
+        print("📡 Using conditional HTTP requests for delta-scraping...")
+        
+        # Make conditional request
+        html_content, is_modified, response_headers = self.get_page_with_conditional_headers(self.signals_url)
+        
+        if not is_modified:
+            print("✅ No changes detected - exiting early")
+            return {
+                'success': True,
+                'new_signals': 0,
+                'duplicates_skipped': 0,
+                'message': '304 Not Modified - no changes'
+            }
+        
+        if not html_content:
+            print("❌ Failed to get page content")
+            return {
+                'success': False,
+                'new_signals': 0,
+                'duplicates_skipped': 0,
+                'error': 'Failed to get page content'
+            }
+        
+        # Extract signals
+        signals = self._extract_signals(html_content)
+        
+        if not signals:
+            print("⚠️  No signals found in content")
+            self.update_watermark(response_headers, new_signals_count=0)
+            return {
+                'success': True,
+                'new_signals': 0,
+                'duplicates_skipped': 0,
+                'message': 'No signals found'
+            }
+        
+        # Process signals with duplicate detection
+        result = self._process_signals_with_duplicate_detection(signals)
+        
+        # Update watermark with response headers
+        self.update_watermark(response_headers, result['new_signals'])
+        
+        return result
+    
+    def _process_signals_with_duplicate_detection(self, signals):
+        """
+        Process signals with intelligent duplicate detection
+        """
+        print(f"🔍 Processing {len(signals)} signals with duplicate detection...")
+        
+        # Get existing signal hashes to check for duplicates
+        from ..models import ScrapedData
+        existing_hashes = set(ScrapedData.objects.values_list('signal_hash', flat=True))
+        print(f"📋 Loaded {len(existing_hashes)} existing signal hashes for duplicate check")
+        
+        new_signals = 0
+        duplicates_skipped = 0
+        
+        for i, signal in enumerate(signals, 1):
+            # Generate signal hash for duplicate detection
+            signal_data = f"{signal.get('instrument', '')}_{signal.get('action', '')}_{signal.get('entry_price', '')}_{signal.get('stop_loss', '')}_{signal.get('take_profit', '')}"
+            signal_hash = hashlib.sha256(signal_data.encode()).hexdigest()
+            
+            # Check for duplicates
+            if signal_hash in existing_hashes:
+                print(f"⏭️  Signal #{i}: DUPLICATE SKIPPED - {signal.get('instrument', 'Unknown')} {signal.get('action', '')}")
+                duplicates_skipped += 1
+                continue
+            
+            print(f"💾 Signal #{i}: SAVING NEW - {signal.get('instrument', 'Unknown')} {signal.get('action', '')}")
+            print(f"       🔑 Hash: {signal_hash[:16]}...")
+            
+            # Save new signal to database
+            try:
+                scraped_data = ScrapedData(
+                    content_html=signal.get('raw_html', ''),
+                    content_text=signal['formatted_text'],
+                    source_url=self.signals_url,
+                    status='success',
+                    is_processed=True,
+                    instrument=signal.get('instrument', ''),
+                    action=signal.get('action', ''),
+                    entry_price=signal.get('entry_price', ''),
+                    take_profit=signal.get('take_profit', ''),
+                    stop_loss=signal.get('stop_loss', ''),
+                    status_signal=signal.get('status', ''),
+                    signal_hash=signal_hash
+                )
+                scraped_data.save()
+                new_signals += 1
+                
+                # Add to our in-memory set to avoid duplicates within this batch
+                existing_hashes.add(signal_hash)
+                
+            except Exception as e:
+                print(f"❌ Error saving signal #{i}: {str(e)}")
+                continue
+        
+        result = {
+            'success': True,
+            'new_signals': new_signals,
+            'duplicates_skipped': duplicates_skipped,
+            'total_processed': len(signals),
+            'message': f'Processed {len(signals)} signals: {new_signals} new, {duplicates_skipped} duplicates'
+        }
+        
+        print(f"✅ Delta-scrape complete: {result['message']}")
+        return result 
