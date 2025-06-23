@@ -10,6 +10,10 @@ from django_celery_beat.models import PeriodicTask, IntervalSchedule
 import json
 import os
 
+# Load environment variables first
+from dotenv import load_dotenv
+load_dotenv()
+
 # Import our models and services
 from .models import ScrapedData, ScrapingWatermark
 from .services.fxleaders_scraper import FXLeadersScraper
