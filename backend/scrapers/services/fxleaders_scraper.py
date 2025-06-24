@@ -11,14 +11,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
-from django.utils import timezone
-from datetime import timedelta
-
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv()
-
-# Try to import webdriver_manager
 try:
     from webdriver_manager.chrome import ChromeDriverManager
 except ImportError:
@@ -104,15 +96,10 @@ class FXLeadersScraper(BaseScraper):
             options.add_argument("--headless")  # Run in headless mode (no visual browser)
             options.add_argument("--window-size=1366,768")  # Smaller window size
             options.add_argument("--disable-extensions")
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option('useAutomationExtension', False)
-
+            
             if ChromeDriverManager:
-                print(f"   • Using webdriver-manager for Chrome driver")
                 self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
             else:
-                print(f"   • Using system Chrome driver")
                 self.driver = webdriver.Chrome(options=options)
                 
             # Navigate to login page
@@ -663,4 +650,4 @@ class FXLeadersScraper(BaseScraper):
         }
         
         print(f"✅ Delta-scrape complete: {result['message']}")
-        return result 
+        return result
