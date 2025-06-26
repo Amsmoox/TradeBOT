@@ -11,10 +11,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
-try:
-    from webdriver_manager.chrome import ChromeDriverManager
-except ImportError:
-    ChromeDriverManager = None
 
 from ..models import ScrapedData
 
@@ -97,10 +93,9 @@ class FXLeadersScraper(BaseScraper):
             options.add_argument("--window-size=1366,768")  # Smaller window size
             options.add_argument("--disable-extensions")
             
-            if ChromeDriverManager:
-                self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-            else:
-                self.driver = webdriver.Chrome(options=options)
+            # Use CHROMEDRIVER_PATH environment variable
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+            self.driver = webdriver.Chrome(service=ChromeService(chromedriver_path), options=options)
                 
             # Navigate to login page
             print(f"🌐 Navigating to login page...")

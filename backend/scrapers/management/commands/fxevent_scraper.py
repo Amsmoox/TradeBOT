@@ -18,10 +18,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-try:
-    from webdriver_manager.chrome import ChromeDriverManager
-except ImportError:
-    ChromeDriverManager = None
 
 logger = logging.getLogger(__name__)
 
@@ -131,10 +127,8 @@ class Command(BaseCommand):
             options.add_argument("--headless")  # Run in headless mode
             options.add_argument("--window-size=1920,1080")  # Set larger window size
             
-            if ChromeDriverManager:
-                driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-            else:
-                driver = webdriver.Chrome(options=options)
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+            driver = webdriver.Chrome(service=ChromeService(chromedriver_path), options=options)
             
             # Navigate to calendar page
             driver.get(url)
@@ -384,4 +378,4 @@ class Command(BaseCommand):
                 logger.error(f"Error saving event {event}: {str(e)}")
                 continue
                 
-        return saved_count 
+        return saved_count
