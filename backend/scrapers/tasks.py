@@ -6,7 +6,7 @@ from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from django_celery_beat.models import PeriodicTask, IntervalSchedule
+from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
 import json
 import os
 
@@ -17,6 +17,7 @@ load_dotenv()
 # Import our models and services
 from .models import ScrapedData, ScrapingWatermark
 from .services.fxleaders_scraper import FXLeadersScraper
+from scrapers.management.commands.fxevent_scraper import Command as FxEventScraperCommand
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,9 @@ def setup_periodic_scraping():
         
         if created:
             print("✅ Created cleanup task for old signals")
+        
+        # Setup event scraping tasks
+        setup_event_periodic_tasks()
         
         print("📅 Periodic task setup completed successfully!")
         return {
@@ -309,7 +313,7 @@ def send_new_signals_to_telegram(new_signals_count):
             if signal.status_signal:
                 msg += f"<b>Status:</b> {signal.status_signal}\n"
                 
-            msg += f"\n<i>🕐 {signal.scrape_date.strftime('%H:%M')} | 🤖 Auto Delta-Scrape</i>"
+            msg += f"\n<i>🕐 {signal.scrape_date.strftime('%H:%M')}</i>"
             
             result = bot.send_message(msg)
             if result.get('success'):
@@ -384,4 +388,57 @@ def get_scraping_status():
 def test_task():
     """Simple test task to verify Celery worker is functioning"""
     print("🧪 TEST TASK EXECUTED SUCCESSFULLY!")
-    return "Test task completed" 
+    return "Test task completed"
+
+@shared_task(name='scrapers.tasks.weekly_event_scrape')
+def weekly_event_scrape():
+    """
+    Celery task to scrape economic events for the week (runs every Sunday).
+    """
+    print("🚦 Starting weekly event scraping (Celery task)...")
+    cmd = FxEventScraperCommand()
+    cmd.handle(selenium=True, days=7, impact='high')
+    print("✅ Weekly event scraping completed.")
+
+@shared_task(name='scrapers.tasks.refresh_actuals_for_recent_events')
+def refresh_actuals_for_recent_events():
+    """
+    Celery task to refresh actual values for recent events (runs every 5 minutes).
+    """
+    print("🔄 Refreshing actual values for recent events (Celery task)...")
+    cmd = FxEventScraperCommand()
+    cmd.refresh_actual_values_for_recent_events(minutes_after=5)
+    print("✅ Actual values refresh completed.")
+
+# Setup periodic tasks for weekly event scraping and actual refresh
+def setup_event_periodic_tasks():
+    # Weekly event scraping every Sunday at 00:05
+    sunday_schedule, _ = CrontabSchedule.objects.get_or_create(
+        minute='5', hour='0', day_of_week='0',
+        day_of_month='*', month_of_year='*'
+    )
+    PeriodicTask.objects.get_or_create(
+        name='Weekly Event Scrape',
+        defaults={
+            'task': 'scrapers.tasks.weekly_event_scrape',
+            'crontab': sunday_schedule,
+            'enabled': True,
+            'description': 'Scrape economic events every Sunday',
+            'queue': 'scraping'
+        }
+    )
+    # Actual refresh every 5 minutes
+    five_min_schedule, _ = CrontabSchedule.objects.get_or_create(
+        minute='*/5', hour='*', day_of_week='*',
+        day_of_month='*', month_of_year='*'
+    )
+    PeriodicTask.objects.get_or_create(
+        name='Refresh Actuals for Recent Events',
+        defaults={
+            'task': 'scrapers.tasks.refresh_actuals_for_recent_events',
+            'crontab': five_min_schedule,
+            'enabled': True,
+            'description': 'Refresh actual values for recent events every 5 minutes',
+            'queue': 'scraping'
+        }
+    )

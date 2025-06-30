@@ -333,32 +333,30 @@ class Command(BaseCommand):
             self.stdout.write("-" * 50)
     
     def save_events(self, events):
-        """Save events to database after filtering for allowed currencies"""
+        """Save only HIGH impact events to database after filtering for allowed currencies"""
         saved_count = 0
         for event in events:
             # Skip events for currencies we don't want
             if event['currency'] not in self.ALLOWED_CURRENCIES:
                 continue
-                
+            # Only save HIGH impact events
+            if event.get('impact', '').upper() != 'HIGH':
+                continue
             try:
                 # Parse the date correctly from format like "May27Tuesday"
                 day_str = event['day']
                 # Extract month and day
                 month = day_str[:3]  # Get first 3 chars (May)
                 day = ''.join(filter(str.isdigit, day_str))  # Extract numbers (27)
-                
                 # Create date string and parse
                 date_str = f"{month} {day}"
                 day_date = datetime.strptime(date_str, '%b %d').replace(year=datetime.now().year)
-                
                 # Clean impact level
                 impact = event['impact'].upper() if event['impact'] else 'LOW'
                 if impact not in ['HIGH', 'MED', 'LOW']:
                     impact = 'LOW'
-                
                 # Clean the previous value (remove asterisk if present)
                 previous = event['previous'].replace('*', '') if event['previous'] else None
-                
                 # Create or update the event
                 economic_event, created = EconomicEvent.objects.update_or_create(
                     day=day_date,
@@ -373,9 +371,51 @@ class Command(BaseCommand):
                     }
                 )
                 saved_count += 1
-                
             except Exception as e:
                 logger.error(f"Error saving event {event}: {str(e)}")
                 continue
-                
         return saved_count
+    
+    def refresh_actual_values_for_recent_events(self, minutes_after=5):
+        """
+        Update the 'actual' field for HIGH impact events that have just passed.
+        Finds events for today whose scheduled time is within the last `minutes_after` minutes,
+        re-scrapes the event data, and updates the 'actual' field in the database.
+        """
+        from scrapers.models import EconomicEvent
+        from datetime import datetime, timedelta
+        import pytz
+
+        now = datetime.now(pytz.UTC)
+        today = now.date()
+        # Get all HIGH impact events for today with NULL/empty actual and time <= now
+        events = EconomicEvent.objects.filter(
+            day=today,
+            impact='HIGH',
+        ).exclude(actual__isnull=False).order_by('time')
+
+        updated_count = 0
+        for event in events:
+            # Parse event time (assume HH:MM format)
+            try:
+                event_time = datetime.strptime(f"{event.day} {event.time}", "%Y-%m-%d %H:%M")
+                event_time = pytz.UTC.localize(event_time)
+            except Exception:
+                continue
+            # Check if event time is within the last `minutes_after` minutes
+            if 0 <= (now - event_time).total_seconds() <= minutes_after * 60:
+                # Re-scrape the event (reuse your scraping logic, e.g., scrape_with_requests or scrape_with_selenium)
+                # For simplicity, let's call scrape_with_requests for the whole day and update the matching event
+                calendar_url = 'https://www.babypips.com/economic-calendar/'
+                scraped_events = self.scrape_with_requests(calendar_url, 1, 'high')
+                for scraped in scraped_events:
+                    if (
+                        scraped['event_name'] == event.event_name and
+                        scraped['currency'] == event.currency and
+                        scraped['time'] == event.time
+                    ):
+                        if scraped.get('actual'):
+                            event.actual = scraped['actual']
+                            event.save(update_fields=['actual'])
+                            updated_count += 1
+        self.stdout.write(self.style.SUCCESS(f"Updated 'actual' for {updated_count} recent events."))

@@ -199,12 +199,6 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs/scraper.log'),
-            'formatter': 'verbose',
-        },
         'celery_file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
@@ -214,7 +208,7 @@ LOGGING = {
     },
     'loggers': {
         'scrapers': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'],  # Only console
             'level': 'INFO',
             'propagate': True,
         },
