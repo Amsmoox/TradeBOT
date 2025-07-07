@@ -160,7 +160,7 @@ def setup_periodic_scraping():
             print("✅ Created cleanup task for old signals")
         
         # Setup event scraping tasks
-        setup_event_periodic_tasks()
+        # setup_event_periodic_tasks()  # DISABLED: replaced by per-event scheduling
         
         print("📅 Periodic task setup completed successfully!")
         return {
@@ -394,51 +394,70 @@ def test_task():
 def weekly_event_scrape():
     """
     Celery task to scrape economic events for the week (runs every Sunday).
+    After scraping, schedule a one-off update task for each event.
     """
     print("🚦 Starting weekly event scraping (Celery task)...")
     cmd = FxEventScraperCommand()
-    cmd.handle(selenium=True, days=7, impact='high')
+    events = cmd.handle(selenium=True, days=7, impact='high', return_events=True)
     print("✅ Weekly event scraping completed.")
 
-@shared_task(name='scrapers.tasks.refresh_actuals_for_recent_events')
-def refresh_actuals_for_recent_events():
-    """
-    Celery task to refresh actual values for recent events (runs every 5 minutes).
-    """
-    print("🔄 Refreshing actual values for recent events (Celery task)...")
-    cmd = FxEventScraperCommand()
-    cmd.refresh_actual_values_for_recent_events(minutes_after=5)
-    print("✅ Actual values refresh completed.")
+    # Schedule update task for each event
+    from .models import EconomicEvent  # Import here to avoid circular import
+    from celery import current_app
+    from django.utils import timezone
+    from datetime import timedelta
 
-# Setup periodic tasks for weekly event scraping and actual refresh
-def setup_event_periodic_tasks():
-    # Weekly event scraping every Sunday at 00:05
-    sunday_schedule, _ = CrontabSchedule.objects.get_or_create(
-        minute='5', hour='0', day_of_week='0',
-        day_of_month='*', month_of_year='*'
+    for event in events:
+        event_time = event.scheduled_time if hasattr(event, 'scheduled_time') else None
+        event_id = event.id if hasattr(event, 'id') else None
+        if event_time and event_id:
+            eta = event_time + timedelta(minutes=2)  # Run 2 min after scheduled time
+            if eta < timezone.now():
+                eta = timezone.now() + timedelta(seconds=10)  # If in past, run soon
+            update_event_actual.apply_async(args=[event_id], eta=eta)
+            print(f"⏰ Scheduled update_event_actual for event {event_id} at {eta}")
+
+    print("✅ All per-event update tasks scheduled.")
+
+@shared_task(name='scrapers.tasks.send_event_to_telegram')
+def send_event_to_telegram(event_id):
+    """
+    Send an economic event to Telegram when its 'actual' value is updated.
+    """
+    from scrapers.models import EconomicEvent
+    from messaging.services.telegram_bot import TelegramBot
+    try:
+        event = EconomicEvent.objects.get(id=event_id)
+    except EconomicEvent.DoesNotExist:
+        print(f"❌ Event {event_id} not found for Telegram notification.")
+        return {'success': False, 'error': 'Event not found'}
+    if not event.actual:
+        print(f"⚠️ Event {event_id} has no actual value, not sending to Telegram.")
+        return {'success': False, 'error': 'No actual value'}
+    # Format message
+    msg = (
+        f"📅 <b>{event.day} {event.time}</b> | <b>{event.currency}</b>\n"
+        f"<b>{event.event_name}</b>\n"
+        f"Impact: <b>{event.impact}</b>\n"
+        f"Forecast: {event.forecast or '-'}\n"
+        f"Actual: <b>{event.actual}</b>\n"
+        f"Previous: {event.previous or '-'}"
     )
-    PeriodicTask.objects.get_or_create(
-        name='Weekly Event Scrape',
-        defaults={
-            'task': 'scrapers.tasks.weekly_event_scrape',
-            'crontab': sunday_schedule,
-            'enabled': True,
-            'description': 'Scrape economic events every Sunday',
-            'queue': 'scraping'
-        }
-    )
-    # Actual refresh every 5 minutes
-    five_min_schedule, _ = CrontabSchedule.objects.get_or_create(
-        minute='*/5', hour='*', day_of_week='*',
-        day_of_month='*', month_of_year='*'
-    )
-    PeriodicTask.objects.get_or_create(
-        name='Refresh Actuals for Recent Events',
-        defaults={
-            'task': 'scrapers.tasks.refresh_actuals_for_recent_events',
-            'crontab': five_min_schedule,
-            'enabled': True,
-            'description': 'Refresh actual values for recent events every 5 minutes',
-            'queue': 'scraping'
-        }
-    )
+    bot = TelegramBot()
+    result = bot.send_message(msg)
+    print(f"📨 Sent event {event_id} to Telegram: {result}")
+    return result
+
+@shared_task(name='scrapers.tasks.update_event_actual')
+def update_event_actual(event_id):
+    """
+    Celery task to update the 'actual' value for a single event, with retry logic.
+    If updated, send the event to Telegram.
+    """
+    print(f"🔄 Updating actual value for event ID {event_id}...")
+    cmd = FxEventScraperCommand()
+    result = cmd.update_single_event_actual(event_id=event_id)
+    print(f"✅ Update result for event {event_id}: {result}")
+    if result.get('status') == 'updated':
+        send_event_to_telegram.delay(event_id)
+    return result

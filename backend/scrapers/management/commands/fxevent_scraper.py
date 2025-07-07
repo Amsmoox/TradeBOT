@@ -419,3 +419,38 @@ class Command(BaseCommand):
                             event.save(update_fields=['actual'])
                             updated_count += 1
         self.stdout.write(self.style.SUCCESS(f"Updated 'actual' for {updated_count} recent events."))
+
+    def update_single_event_actual(self, event_id):
+        """
+        Update the 'actual' value for a single event by re-scraping the event data.
+        Returns a dict with status and updated value.
+        """
+        from scrapers.models import EconomicEvent
+        from datetime import datetime
+        import pytz
+
+        try:
+            event = EconomicEvent.objects.get(id=event_id)
+        except EconomicEvent.DoesNotExist:
+            return {'status': 'not_found', 'event_id': event_id}
+
+        # Scrape events for the event's day
+        calendar_url = 'https://www.babypips.com/economic-calendar/'
+        scraped_events = self.scrape_with_requests(calendar_url, 1, 'high')
+        updated = False
+        for scraped in scraped_events:
+            if (
+                scraped['event_name'] == event.event_name and
+                scraped['currency'] == event.currency and
+                scraped['time'] == event.time
+            ):
+                if scraped.get('actual') and scraped['actual'] != event.actual:
+                    event.actual = scraped['actual']
+                    event.save(update_fields=['actual'])
+                    updated = True
+                    break
+        return {
+            'status': 'updated' if updated else 'no_change',
+            'event_id': event_id,
+            'actual': event.actual
+        }
