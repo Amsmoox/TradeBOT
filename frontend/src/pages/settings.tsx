@@ -1,786 +1,844 @@
-import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Plus, Edit, Trash2, Check, X, ExternalLink, Database, Users, Clock, TestTube, Activity } from 'lucide-react';
-import { Sidebar } from '@/components/dashboard/sidebar';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { useState } from "react";
+import { Settings as SettingsIcon, Plus, Edit, Trash2, ToggleLeft, ToggleRight, Save, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
-interface DataSource {
-  id: string;
+// Types for better type safety
+interface InputSource {
+  id: number;
   name: string;
-  type: 'economic' | 'market' | 'trading';
-  url: string;
-  scrapingConfig: any;
-  dataFormat: any;
-  status: 'active' | 'inactive' | 'error';
-  lastUpdated: Date | null;
-  createdAt: Date;
+  type: "Economic Calendar" | "Trading Signals" | "Market News";
+  method: "API" | "Scraping";
+  endpoint: string;
+  status: boolean;
+  config: any;
 }
 
-interface PlatformAccount {
-  id: string;
-  platform: 'telegram' | 'twitter' | 'discord' | 'website';
-  accountName: string;
-  displayName: string;
-  credentials: any;
-  status: 'active' | 'inactive' | 'error';
-  rateLimits: any;
-  lastUsed: Date | null;
-  createdAt: Date;
+interface OutputDestination {
+  id: number;
+  platform: "Telegram" | "Twitter" | "Discord" | "WhatsApp";
+  label: string;
+  accountId: string;
+  token: string;
+  status: boolean;
+  config: any;
 }
+
+// Initial data with individual API keys/tokens per account
+const initialInputSources: InputSource[] = [
+  {
+    id: 1,
+    name: "Trading Economics API",
+    type: "Economic Calendar",
+    method: "API",
+    endpoint: "https://api.tradingeconomics.com/calendar",
+    status: true,
+    config: { apiKey: "TE_API_KEY_123", countries: ["US", "EU"], importance: ["High", "Medium"] }
+  },
+  {
+    id: 2,
+    name: "FXLeaders Scraper",
+    type: "Trading Signals",
+    method: "Scraping",
+    endpoint: "https://www.fxleaders.com/live-trading-signals",
+    status: true,
+    config: { interval: "30s", instruments: ["EUR/USD", "GBP/USD", "USD/JPY"] }
+  },
+  {
+    id: 3,
+    name: "Reuters News Feed",
+    type: "Market News",
+    method: "API",
+    endpoint: "https://api.reuters.com/news",
+    status: false,
+    config: { apiKey: "REUTERS_API_456", categories: ["forex", "stocks"] }
+  }
+];
+
+const initialOutputDestinations: OutputDestination[] = [
+  {
+    id: 1,
+    platform: "Telegram",
+    label: "FX News Channel",
+    accountId: "@fxnews_channel",
+    token: "1234567890:AAEhBOwweELEechPqS-GzQn8g_9eNBqKEys",
+    status: true,
+    config: { parseMode: "HTML", disablePreview: true }
+  },
+  {
+    id: 2,
+    platform: "Twitter",
+    label: "Trading Account Main",
+    accountId: "@tradingbot_main",
+    token: "AAAAAAAAAAAAAAAAAAAAAL%2FXHQEAAAAA",
+    status: true,
+    config: { hashtags: ["#forex", "#trading"], schedule: "immediate" }
+  },
+  {
+    id: 3,
+    platform: "Discord",
+    label: "Trading Community",
+    accountId: "trading-signals",
+    token: "https://discord.com/api/webhooks/123456789/abcdefghijk",
+    status: true,
+    config: { mentions: "@everyone", embedColor: "#0099ff" }
+  },
+  {
+    id: 4,
+    platform: "WhatsApp",
+    label: "VIP Group",
+    accountId: "+1234567890",
+    token: "SESSION_STRING_BASE64_ENCODED",
+    status: false,
+    config: { broadcastList: true, mediaSupport: false }
+  }
+];
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('data-sources');
-  const [editingDataSource, setEditingDataSource] = useState<string | null>(null);
-  const [editingAccount, setEditingAccount] = useState<string | null>(null);
-  const [showDataSourceForm, setShowDataSourceForm] = useState(false);
-  const [showAccountForm, setShowAccountForm] = useState(false);
-  const [connectionTesting, setConnectionTesting] = useState<string | null>(null);
-
-  const queryClient = useQueryClient();
-
-  // Data sources queries
-  const { data: dataSources = [], isLoading: loadingSources } = useQuery({
-    queryKey: ['/api/data-sources'],
-    queryFn: () => apiRequest('/api/data-sources')
+  const [inputSources, setInputSources] = useState<InputSource[]>(initialInputSources);
+  const [outputDestinations, setOutputDestinations] = useState<OutputDestination[]>(initialOutputDestinations);
+  const [editingInput, setEditingInput] = useState<InputSource | null>(null);
+  const [editingOutput, setEditingOutput] = useState<OutputDestination | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{type: 'input' | 'output', id: number} | null>(null);
+  const [showInputDialog, setShowInputDialog] = useState(false);
+  const [showOutputDialog, setShowOutputDialog] = useState(false);
+  
+  // Scheduling state
+  const [scheduleSettings, setScheduleSettings] = useState({
+    autoPost: true,
+    postInterval: 30,
+    quietHours: { start: "22:00", end: "06:00" },
+    timezone: "UTC",
+    weekendPosting: false
+  });
+  
+  // Form states
+  const [inputForm, setInputForm] = useState({
+    name: '',
+    type: 'Economic Calendar' as InputSource['type'],
+    method: 'API' as InputSource['method'],
+    endpoint: '',
+    apiKey: '',
+    configText: '{}'
+  });
+  
+  const [outputForm, setOutputForm] = useState({
+    platform: 'Telegram' as OutputDestination['platform'],
+    label: '',
+    accountId: '',
+    token: '',
+    configText: '{}'
   });
 
-  const { data: platformAccounts = [], isLoading: loadingAccounts } = useQuery({
-    queryKey: ['/api/platform-accounts'],
-    queryFn: () => apiRequest('/api/platform-accounts')
-  });
-
-  // Mutations
-  const createDataSourceMutation = useMutation({
-    mutationFn: (data: any) => apiRequest('/api/data-sources', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/data-sources'] });
-      setShowDataSourceForm(false);
-    }
-  });
-
-  const updateDataSourceMutation = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest(`/api/data-sources/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/data-sources'] });
-      setEditingDataSource(null);
-    }
-  });
-
-  const deleteDataSourceMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/data-sources/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/data-sources'] });
-    }
-  });
-
-  const createAccountMutation = useMutation({
-    mutationFn: (data: any) => apiRequest('/api/platform-accounts', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/platform-accounts'] });
-      setShowAccountForm(false);
-    }
-  });
-
-  const updateAccountMutation = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest(`/api/platform-accounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/platform-accounts'] });
-      setEditingAccount(null);
-    }
-  });
-
-  const deleteAccountMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/platform-accounts/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/platform-accounts'] });
-    }
-  });
-
-  const testConnection = async (sourceId: string) => {
-    setConnectionTesting(sourceId);
-    // Simulate connection test
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setConnectionTesting(null);
+  const getPlatformIcon = (platform: string) => {
+    const icons = {
+      'Telegram': '📱',
+      'Twitter': '🐦',
+      'Discord': '💬',
+      'WhatsApp': '📲'
+    };
+    return icons[platform as keyof typeof icons] || '🌐';
   };
 
-  const DataSourceForm = ({ source, onSave, onCancel }: any) => {
-    const [formData, setFormData] = useState({
-      id: source?.id || `source_${Date.now()}`,
-      name: source?.name || '',
-      type: source?.type || 'economic',
-      url: source?.url || '',
-      scrapingConfig: source?.scrapingConfig || {
-        method: 'scraping',
-        headers: {},
-        selectors: {
-          container: '',
-          title: '',
-          time: '',
-          impact: '',
-          currency: ''
-        },
-        rate_limit: 60,
-        retry_attempts: 3
-      },
-      dataFormat: source?.dataFormat || {
-        fields: [],
-        timestamp_field: 'time',
-        update_frequency: 'hourly'
-      },
-      status: source?.status || 'active'
+  const getMethodBadge = (method: string) => {
+    return method === 'API' 
+      ? 'bg-green-100 text-green-800' 
+      : 'bg-blue-100 text-blue-800';
+  };
+
+  // Input source CRUD operations
+  const handleAddInput = () => {
+    setInputForm({ 
+      name: '', 
+      type: 'Economic Calendar', 
+      method: 'API', 
+      endpoint: '', 
+      apiKey: '', 
+      configText: '{}' 
     });
+    setEditingInput(null);
+    setShowInputDialog(true);
+  };
 
-    const handleSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      onSave(formData);
-    };
+  const handleEditInput = (source: InputSource) => {
+    setInputForm({
+      name: source.name,
+      type: source.type,
+      method: source.method,
+      endpoint: source.endpoint,
+      apiKey: source.config.apiKey || '',
+      configText: JSON.stringify(source.config, null, 2)
+    });
+    setEditingInput(source);
+    setShowInputDialog(true);
+  };
 
-    return (
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>{source ? 'Edit Data Source' : 'Add Data Source'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+  const handleSaveInput = () => {
+    try {
+      const config = JSON.parse(inputForm.configText);
+      if (inputForm.apiKey) {
+        config.apiKey = inputForm.apiKey;
+      }
+
+      const newSource: InputSource = {
+        id: editingInput?.id || Date.now(),
+        name: inputForm.name,
+        type: inputForm.type,
+        method: inputForm.method,
+        endpoint: inputForm.endpoint,
+        status: editingInput?.status ?? true,
+        config
+      };
+
+      if (editingInput) {
+        setInputSources(prev => prev.map(s => s.id === editingInput.id ? newSource : s));
+      } else {
+        setInputSources(prev => [...prev, newSource]);
+      }
+      
+      setShowInputDialog(false);
+      setEditingInput(null);
+    } catch (error) {
+      alert('Invalid JSON configuration');
+    }
+  };
+
+  const handleDeleteInput = (id: number) => {
+    setInputSources(prev => prev.filter(s => s.id !== id));
+    setDeleteConfirm(null);
+  };
+
+  const toggleInputStatus = (id: number) => {
+    setInputSources(prev => prev.map(s => 
+      s.id === id ? { ...s, status: !s.status } : s
+    ));
+  };
+
+  // Output destination CRUD operations
+  const handleAddOutput = () => {
+    setOutputForm({ 
+      platform: 'Telegram', 
+      label: '', 
+      accountId: '', 
+      token: '', 
+      configText: '{}' 
+    });
+    setEditingOutput(null);
+    setShowOutputDialog(true);
+  };
+
+  const handleEditOutput = (dest: OutputDestination) => {
+    setOutputForm({
+      platform: dest.platform,
+      label: dest.label,
+      accountId: dest.accountId,
+      token: dest.token,
+      configText: JSON.stringify(dest.config, null, 2)
+    });
+    setEditingOutput(dest);
+    setShowOutputDialog(true);
+  };
+
+  const handleSaveOutput = () => {
+    try {
+      const config = JSON.parse(outputForm.configText);
+
+      const newDest: OutputDestination = {
+        id: editingOutput?.id || Date.now(),
+        platform: outputForm.platform,
+        label: outputForm.label,
+        accountId: outputForm.accountId,
+        token: outputForm.token,
+        status: editingOutput?.status ?? true,
+        config
+      };
+
+      if (editingOutput) {
+        setOutputDestinations(prev => prev.map(d => d.id === editingOutput.id ? newDest : d));
+      } else {
+        setOutputDestinations(prev => [...prev, newDest]);
+      }
+      
+      setShowOutputDialog(false);
+      setEditingOutput(null);
+    } catch (error) {
+      alert('Invalid JSON configuration');
+    }
+  };
+
+  const handleDeleteOutput = (id: number) => {
+    setOutputDestinations(prev => prev.filter(d => d.id !== id));
+    setDeleteConfirm(null);
+  };
+
+  const toggleOutputStatus = (id: number) => {
+    setOutputDestinations(prev => prev.map(d => 
+      d.id === id ? { ...d, status: !d.status } : d
+    ));
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/50">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+              <SettingsIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                TradeBOT Settings
+              </h1>
+              <p className="text-slate-600">Configure data sources, platform accounts, and scheduling</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          
+          {/* Data Sources Section */}
+          <div className="xl:col-span-1">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">📊</span>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Data Sources</h2>
+                    <p className="text-xs text-slate-600">Input sources & scrapers</p>
+                  </div>
+                </div>
+                <Button 
+                  onClick={handleAddInput}
+                  className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-lg"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {inputSources.map((source) => (
+                  <div key={source.id} className="bg-white/50 rounded-xl border border-slate-200/50 p-4 hover:bg-white/70 transition-all">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <h3 className="font-semibold text-slate-900 text-sm">{source.name}</h3>
+                        <Badge className={`${getMethodBadge(source.method)} text-xs`}>
+                          {source.method}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <button onClick={() => toggleInputStatus(source.id)}>
+                          {source.status ? (
+                            <ToggleRight className="w-5 h-5 text-emerald-600" />
+                          ) : (
+                            <ToggleLeft className="w-5 h-5 text-slate-400" />
+                          )}
+                        </button>
+                        <Button variant="ghost" size="sm" onClick={() => handleEditInput(source)} className="h-6 w-6 p-0">
+                          <Edit className="w-3 h-3" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-red-600 h-6 w-6 p-0"
+                          onClick={() => setDeleteConfirm({type: 'input', id: source.id})}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="text-xs space-y-1">
+                      <p className="text-slate-600 truncate">{source.endpoint}</p>
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="text-xs">
+                          {source.type}
+                        </Badge>
+                        <span className={`text-xs font-medium ${source.status ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {source.status ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Platform Accounts Section */}
+          <div className="xl:col-span-1">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">🔗</span>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Platform Accounts</h2>
+                    <p className="text-xs text-slate-600">Connected social platforms</p>
+                  </div>
+                </div>
+                <Button 
+                  onClick={handleAddOutput}
+                  className="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-lg"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {outputDestinations.map((dest) => (
+                  <div key={dest.id} className="bg-white/50 rounded-xl border border-slate-200/50 p-4 hover:bg-white/70 transition-all">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-lg">{getPlatformIcon(dest.platform)}</span>
+                        <div>
+                          <h3 className="font-semibold text-slate-900 text-sm">{dest.label}</h3>
+                          <p className="text-xs text-slate-600">{dest.accountId}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <button onClick={() => toggleOutputStatus(dest.id)}>
+                          {dest.status ? (
+                            <ToggleRight className="w-5 h-5 text-purple-600" />
+                          ) : (
+                            <ToggleLeft className="w-5 h-5 text-slate-400" />
+                          )}
+                        </button>
+                        <Button variant="ghost" size="sm" onClick={() => handleEditOutput(dest)} className="h-6 w-6 p-0">
+                          <Edit className="w-3 h-3" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-red-600 h-6 w-6 p-0"
+                          onClick={() => setDeleteConfirm({type: 'output', id: dest.id})}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-xs">
+                      <Badge variant="outline" className="text-xs">
+                        {dest.platform}
+                      </Badge>
+                      <Badge className={`${dest.status ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800'} text-xs`}>
+                        {dest.status ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Scheduling Section */}
+          <div className="xl:col-span-1">
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-6">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">⏰</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Scheduling</h2>
+                  <p className="text-xs text-slate-600">Auto-posting configuration</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {/* Auto-posting Toggle */}
+                <div className="bg-white/50 rounded-xl border border-slate-200/50 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <label className="text-sm font-semibold text-slate-900">Auto-posting</label>
+                      <p className="text-xs text-slate-600">Enable automated posting</p>
+                    </div>
+                    <button 
+                      onClick={() => setScheduleSettings(prev => ({...prev, autoPost: !prev.autoPost}))}
+                      className="flex items-center"
+                    >
+                      {scheduleSettings.autoPost ? (
+                        <ToggleRight className="w-6 h-6 text-orange-600" />
+                      ) : (
+                        <ToggleLeft className="w-6 h-6 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Settings */}
+                <div className="bg-white/50 rounded-xl border border-slate-200/50 p-4">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Quick Settings</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="postInterval" className="text-xs">Interval (min)</Label>
+                      <Input
+                        id="postInterval"
+                        type="number"
+                        value={scheduleSettings.postInterval}
+                        onChange={(e) => setScheduleSettings(prev => ({...prev, postInterval: parseInt(e.target.value) || 30}))}
+                        min="1"
+                        max="1440"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="timezone" className="text-xs">Timezone</Label>
+                      <Select 
+                        value={scheduleSettings.timezone} 
+                        onValueChange={(value) => setScheduleSettings(prev => ({...prev, timezone: value}))}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="UTC">UTC</SelectItem>
+                          <SelectItem value="America/New_York">New York</SelectItem>
+                          <SelectItem value="Europe/London">London</SelectItem>
+                          <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quiet Hours */}
+                <div className="bg-white/50 rounded-xl border border-slate-200/50 p-4">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Quiet Hours</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="quietStart" className="text-xs">Start</Label>
+                      <Input
+                        id="quietStart"
+                        type="time"
+                        value={scheduleSettings.quietHours.start}
+                        onChange={(e) => setScheduleSettings(prev => ({
+                          ...prev, 
+                          quietHours: {...prev.quietHours, start: e.target.value}
+                        }))}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="quietEnd" className="text-xs">End</Label>
+                      <Input
+                        id="quietEnd"
+                        type="time"
+                        value={scheduleSettings.quietHours.end}
+                        onChange={(e) => setScheduleSettings(prev => ({
+                          ...prev, 
+                          quietHours: {...prev.quietHours, end: e.target.value}
+                        }))}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Weekend Toggle */}
+                <div className="bg-white/50 rounded-xl border border-slate-200/50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-semibold text-slate-900">Weekend Posting</label>
+                      <p className="text-xs text-slate-600">Post on weekends</p>
+                    </div>
+                    <button 
+                      onClick={() => setScheduleSettings(prev => ({...prev, weekendPosting: !prev.weekendPosting}))}
+                      className="flex items-center"
+                    >
+                      {scheduleSettings.weekendPosting ? (
+                        <ToggleRight className="w-5 h-5 text-orange-600" />
+                      ) : (
+                        <ToggleLeft className="w-5 h-5 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content Schedules */}
+                <div className="bg-white/50 rounded-xl border border-slate-200/50 p-4">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Content Schedules</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center space-x-1">
+                        <span>📊</span>
+                        <span>Economic</span>
+                      </span>
+                      <Badge className="bg-blue-100 text-blue-800 text-xs">Immediate</Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center space-x-1">
+                        <span>⚡</span>
+                        <span>Signals</span>
+                      </span>
+                      <Badge className="bg-green-100 text-green-800 text-xs">5min</Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center space-x-1">
+                        <span>📰</span>
+                        <span>News</span>
+                      </span>
+                      <Badge className="bg-yellow-100 text-yellow-800 text-xs">30min</Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Summary Banner */}
+        <div className="mt-8 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-indigo-500/10 rounded-2xl border border-blue-200/50 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span className="text-white font-bold">🎯</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">System Status</h3>
+                <p className="text-slate-600">Current configuration overview</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-6 text-center">
+              <div>
+                <div className="text-2xl font-bold text-emerald-600">{inputSources.filter(s => s.status).length}</div>
+                <div className="text-xs text-slate-600">Active Sources</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-purple-600">{outputDestinations.filter(d => d.status).length}</div>
+                <div className="text-xs text-slate-600">Connected Platforms</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-orange-600">{scheduleSettings.autoPost ? 'ON' : 'OFF'}</div>
+                <div className="text-xs text-slate-600">Auto-posting</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Input Source Dialog */}
+      <Dialog open={showInputDialog} onOpenChange={setShowInputDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingInput ? 'Edit Input Source' : 'Add Input Source'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="name">Source Name</Label>
                 <Input
                   id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., ForexFactory Economic Calendar"
-                  required
+                  value={inputForm.name}
+                  onChange={(e) => setInputForm(prev => ({...prev, name: e.target.value}))}
+                  placeholder="e.g., Trading Economics API"
                 />
               </div>
               <div>
-                <Label htmlFor="type">Type</Label>
-                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
+                <Label htmlFor="type">Content Type</Label>
+                <Select 
+                  value={inputForm.type} 
+                  onValueChange={(value) => setInputForm(prev => ({...prev, type: value as any}))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="economic">Economic Calendar</SelectItem>
-                    <SelectItem value="market">Market News</SelectItem>
-                    <SelectItem value="trading">Trading Signals</SelectItem>
+                    <SelectItem value="Economic Calendar">Economic Calendar</SelectItem>
+                    <SelectItem value="Trading Signals">Trading Signals</SelectItem>
+                    <SelectItem value="Market News">Market News</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-
-            <div>
-              <Label htmlFor="url">Source URL</Label>
-              <Input
-                id="url"
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder="https://www.forexfactory.com/calendar"
-                required
-              />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="method">Method</Label>
+                <Select 
+                  value={inputForm.method} 
+                  onValueChange={(value) => setInputForm(prev => ({...prev, method: value as any}))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="API">API</SelectItem>
+                    <SelectItem value="Scraping">Scraping</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="endpoint">Endpoint URL</Label>
+                <Input
+                  id="endpoint"
+                  value={inputForm.endpoint}
+                  onChange={(e) => setInputForm(prev => ({...prev, endpoint: e.target.value}))}
+                  placeholder="https://api.example.com/data"
+                />
+              </div>
             </div>
 
-            <div>
-              <Label htmlFor="method">Scraping Method</Label>
-              <Select 
-                value={formData.scrapingConfig.method} 
-                onValueChange={(value) => setFormData({ 
-                  ...formData, 
-                  scrapingConfig: { ...formData.scrapingConfig, method: value }
-                })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scraping">Web Scraping</SelectItem>
-                  <SelectItem value="api">REST API</SelectItem>
-                  <SelectItem value="webhook">Webhook</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {formData.scrapingConfig.method === 'scraping' && (
-              <div className="space-y-3">
-                <Label>CSS Selectors</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    placeholder="Container selector"
-                    value={formData.scrapingConfig.selectors.container}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      scrapingConfig: {
-                        ...formData.scrapingConfig,
-                        selectors: { ...formData.scrapingConfig.selectors, container: e.target.value }
-                      }
-                    })}
-                  />
-                  <Input
-                    placeholder="Title selector"
-                    value={formData.scrapingConfig.selectors.title}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      scrapingConfig: {
-                        ...formData.scrapingConfig,
-                        selectors: { ...formData.scrapingConfig.selectors, title: e.target.value }
-                      }
-                    })}
-                  />
-                  <Input
-                    placeholder="Time selector"
-                    value={formData.scrapingConfig.selectors.time}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      scrapingConfig: {
-                        ...formData.scrapingConfig,
-                        selectors: { ...formData.scrapingConfig.selectors, time: e.target.value }
-                      }
-                    })}
-                  />
-                  <Input
-                    placeholder="Impact selector"
-                    value={formData.scrapingConfig.selectors.impact}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      scrapingConfig: {
-                        ...formData.scrapingConfig,
-                        selectors: { ...formData.scrapingConfig.selectors, impact: e.target.value }
-                      }
-                    })}
-                  />
-                </div>
+            {inputForm.method === 'API' && (
+              <div>
+                <Label htmlFor="apiKey">API Key</Label>
+                <Input
+                  id="apiKey"
+                  type="password"
+                  value={inputForm.apiKey}
+                  onChange={(e) => setInputForm(prev => ({...prev, apiKey: e.target.value}))}
+                  placeholder="Your API key"
+                />
               </div>
             )}
 
-            <div className="flex justify-end space-x-2">
-              <Button type="button" variant="outline" onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                {source ? 'Update' : 'Create'} Source
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const PlatformAccountForm = ({ account, onSave, onCancel }: any) => {
-    const [formData, setFormData] = useState({
-      id: account?.id || `account_${Date.now()}`,
-      platform: account?.platform || 'telegram',
-      accountName: account?.accountName || '',
-      displayName: account?.displayName || '',
-      credentials: account?.credentials || {},
-      status: account?.status || 'active',
-      rateLimits: account?.rateLimits || {
-        posts_per_hour: 10,
-        posts_per_day: 100,
-        character_limit: 4096
-      }
-    });
-
-    const handleSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      onSave(formData);
-    };
-
-    const renderCredentialFields = () => {
-      switch (formData.platform) {
-        case 'telegram':
-          return (
-            <>
-              <div>
-                <Label htmlFor="bot_token">Bot Token</Label>
-                <Input
-                  id="bot_token"
-                  type="password"
-                  value={formData.credentials.bot_token || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, bot_token: e.target.value }
-                  })}
-                  placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-                />
-              </div>
-              <div>
-                <Label htmlFor="chat_id">Chat ID</Label>
-                <Input
-                  id="chat_id"
-                  value={formData.credentials.chat_id || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, chat_id: e.target.value }
-                  })}
-                  placeholder="-1001234567890"
-                />
-              </div>
-            </>
-          );
-        case 'twitter':
-          return (
-            <>
-              <div>
-                <Label htmlFor="api_key">API Key</Label>
-                <Input
-                  id="api_key"
-                  type="password"
-                  value={formData.credentials.api_key || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, api_key: e.target.value }
-                  })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="api_secret">API Secret</Label>
-                <Input
-                  id="api_secret"
-                  type="password"
-                  value={formData.credentials.api_secret || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, api_secret: e.target.value }
-                  })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="access_token">Access Token</Label>
-                <Input
-                  id="access_token"
-                  type="password"
-                  value={formData.credentials.access_token || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, access_token: e.target.value }
-                  })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="access_token_secret">Access Token Secret</Label>
-                <Input
-                  id="access_token_secret"
-                  type="password"
-                  value={formData.credentials.access_token_secret || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, access_token_secret: e.target.value }
-                  })}
-                />
-              </div>
-            </>
-          );
-        case 'discord':
-          return (
             <div>
-              <Label htmlFor="webhook_url">Webhook URL</Label>
-              <Input
-                id="webhook_url"
-                value={formData.credentials.webhook_url || ''}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  credentials: { ...formData.credentials, webhook_url: e.target.value }
-                })}
-                placeholder="https://discord.com/api/webhooks/..."
+              <Label htmlFor="config">Configuration (JSON)</Label>
+              <Textarea
+                id="config"
+                value={inputForm.configText}
+                onChange={(e) => setInputForm(prev => ({...prev, configText: e.target.value}))}
+                placeholder='{"countries": ["US", "EU"], "importance": ["High"]}'
+                rows={4}
               />
             </div>
-          );
-        case 'website':
-          return (
-            <>
-              <div>
-                <Label htmlFor="api_endpoint">API Endpoint</Label>
-                <Input
-                  id="api_endpoint"
-                  value={formData.credentials.api_endpoint || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, api_endpoint: e.target.value }
-                  })}
-                  placeholder="https://yoursite.com/api/posts"
-                />
-              </div>
-              <div>
-                <Label htmlFor="auth_header">Authorization Header</Label>
-                <Input
-                  id="auth_header"
-                  type="password"
-                  value={formData.credentials.auth_header || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    credentials: { ...formData.credentials, auth_header: e.target.value }
-                  })}
-                  placeholder="Bearer your-api-key"
-                />
-              </div>
-            </>
-          );
-        default:
-          return null;
-      }
-    };
 
-    return (
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>{account ? 'Edit Platform Account' : 'Add Platform Account'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setShowInputDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveInput}>
+                <Save className="w-4 h-4 mr-2" />
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Output Destination Dialog */}
+      <Dialog open={showOutputDialog} onOpenChange={setShowOutputDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingOutput ? 'Edit Output Destination' : 'Add Output Destination'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="platform">Platform</Label>
-                <Select value={formData.platform} onValueChange={(value) => setFormData({ ...formData, platform: value })}>
+                <Select 
+                  value={outputForm.platform} 
+                  onValueChange={(value) => setOutputForm(prev => ({...prev, platform: value as any}))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="telegram">Telegram</SelectItem>
-                    <SelectItem value="twitter">Twitter/X</SelectItem>
-                    <SelectItem value="discord">Discord</SelectItem>
-                    <SelectItem value="website">Website</SelectItem>
+                    <SelectItem value="Telegram">Telegram</SelectItem>
+                    <SelectItem value="Twitter">Twitter</SelectItem>
+                    <SelectItem value="Discord">Discord</SelectItem>
+                    <SelectItem value="WhatsApp">WhatsApp</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label htmlFor="accountName">Account Name</Label>
+                <Label htmlFor="label">Label</Label>
                 <Input
-                  id="accountName"
-                  value={formData.accountName}
-                  onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
-                  placeholder="my_trading_bot"
-                  required
+                  id="label"
+                  value={outputForm.label}
+                  onChange={(e) => setOutputForm(prev => ({...prev, label: e.target.value}))}
+                  placeholder="e.g., Main Trading Channel"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="accountId">Account/Channel ID</Label>
+                <Input
+                  id="accountId"
+                  value={outputForm.accountId}
+                  onChange={(e) => setOutputForm(prev => ({...prev, accountId: e.target.value}))}
+                  placeholder="@channel_name or +1234567890"
+                />
+              </div>
+              <div>
+                <Label htmlFor="token">Token/API Key</Label>
+                <Input
+                  id="token"
+                  type="password"
+                  value={outputForm.token}
+                  onChange={(e) => setOutputForm(prev => ({...prev, token: e.target.value}))}
+                  placeholder="Bot token or API key"
                 />
               </div>
             </div>
 
             <div>
-              <Label htmlFor="displayName">Display Name</Label>
-              <Input
-                id="displayName"
-                value={formData.displayName}
-                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                placeholder="Trading Signals Bot"
-                required
+              <Label htmlFor="outputConfig">Platform Configuration (JSON)</Label>
+              <Textarea
+                id="outputConfig"
+                value={outputForm.configText}
+                onChange={(e) => setOutputForm(prev => ({...prev, configText: e.target.value}))}
+                placeholder='{"parseMode": "HTML", "disablePreview": true}'
+                rows={4}
               />
             </div>
 
-            {renderCredentialFields()}
-
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="posts_per_hour">Posts/Hour</Label>
-                <Input
-                  id="posts_per_hour"
-                  type="number"
-                  value={formData.rateLimits.posts_per_hour}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    rateLimits: { ...formData.rateLimits, posts_per_hour: parseInt(e.target.value) }
-                  })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="posts_per_day">Posts/Day</Label>
-                <Input
-                  id="posts_per_day"
-                  type="number"
-                  value={formData.rateLimits.posts_per_day}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    rateLimits: { ...formData.rateLimits, posts_per_day: parseInt(e.target.value) }
-                  })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="character_limit">Character Limit</Label>
-                <Input
-                  id="character_limit"
-                  type="number"
-                  value={formData.rateLimits.character_limit}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    rateLimits: { ...formData.rateLimits, character_limit: parseInt(e.target.value) }
-                  })}
-                />
-              </div>
-            </div>
-
             <div className="flex justify-end space-x-2">
-              <Button type="button" variant="outline" onClick={onCancel}>
+              <Button variant="outline" onClick={() => setShowOutputDialog(false)}>
                 Cancel
               </Button>
-              <Button type="submit">
-                {account ? 'Update' : 'Create'} Account
+              <Button onClick={handleSaveOutput}>
+                <Save className="w-4 h-4 mr-2" />
+                Save
               </Button>
             </div>
-          </form>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  return (
-    <div className="flex h-screen bg-slate-50">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-slate-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                <SettingsIcon className="w-5 h-5 text-slate-600" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
-                <p className="text-sm text-slate-600 mt-1">Manage data sources, platform accounts, and automation settings</p>
-              </div>
-            </div>
           </div>
-        </header>
+        </DialogContent>
+      </Dialog>
 
-        <main className="flex-1 overflow-y-auto p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="data-sources" className="flex items-center gap-2">
-                <Database className="w-4 h-4" />
-                Data Sources
-              </TabsTrigger>
-              <TabsTrigger value="platform-accounts" className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Platform Accounts
-              </TabsTrigger>
-              <TabsTrigger value="scheduling" className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                Scheduling
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="data-sources" className="space-y-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900">Data Sources</h2>
-                  <p className="text-sm text-slate-600 mt-1">Configure external data sources for content generation</p>
-                </div>
-                <Button onClick={() => setShowDataSourceForm(true)} className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Source
-                </Button>
-              </div>
-
-              {showDataSourceForm && (
-                <DataSourceForm
-                  onSave={(data: any) => createDataSourceMutation.mutate(data)}
-                  onCancel={() => setShowDataSourceForm(false)}
-                />
-              )}
-
-              <div className="grid gap-4">
-                {loadingSources ? (
-                  <div className="text-center py-8">Loading data sources...</div>
-                ) : dataSources.length === 0 ? (
-                  <Card>
-                    <CardContent className="text-center py-8">
-                      <Database className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-slate-900 mb-2">No data sources configured</h3>
-                      <p className="text-slate-600 mb-4">Add your first data source to start collecting content data</p>
-                      <Button onClick={() => setShowDataSourceForm(true)}>
-                        Add Data Source
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  dataSources.map((source: DataSource) => (
-                    <Card key={source.id}>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <CardTitle className="flex items-center gap-2">
-                              {source.name}
-                              <Badge variant={source.status === 'active' ? 'default' : 'secondary'}>
-                                {source.status}
-                              </Badge>
-                            </CardTitle>
-                            <CardDescription className="flex items-center gap-4 mt-1">
-                              <span className="capitalize">{source.type}</span>
-                              <span>•</span>
-                              <span>{source.url}</span>
-                            </CardDescription>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => testConnection(source.id)}
-                              disabled={connectionTesting === source.id}
-                            >
-                              {connectionTesting === source.id ? (
-                                <Activity className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <TestTube className="w-4 h-4" />
-                              )}
-                              Test
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setEditingDataSource(source.id)}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => deleteDataSourceMutation.mutate(source.id)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      {source.lastUpdated && (
-                        <CardContent>
-                          <p className="text-sm text-slate-600">
-                            Last updated: {new Date(source.lastUpdated).toLocaleString()}
-                          </p>
-                        </CardContent>
-                      )}
-                      {editingDataSource === source.id && (
-                        <CardContent>
-                          <DataSourceForm
-                            source={source}
-                            onSave={(data: any) => updateDataSourceMutation.mutate({ id: source.id, ...data })}
-                            onCancel={() => setEditingDataSource(null)}
-                          />
-                        </CardContent>
-                      )}
-                    </Card>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="platform-accounts" className="space-y-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900">Platform Accounts</h2>
-                  <p className="text-sm text-slate-600 mt-1">Manage social media and publishing platform accounts</p>
-                </div>
-                <Button onClick={() => setShowAccountForm(true)} className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Account
-                </Button>
-              </div>
-
-              {showAccountForm && (
-                <PlatformAccountForm
-                  onSave={(data: any) => createAccountMutation.mutate(data)}
-                  onCancel={() => setShowAccountForm(false)}
-                />
-              )}
-
-              <div className="grid gap-4">
-                {loadingAccounts ? (
-                  <div className="text-center py-8">Loading platform accounts...</div>
-                ) : platformAccounts.length === 0 ? (
-                  <Card>
-                    <CardContent className="text-center py-8">
-                      <Users className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-slate-900 mb-2">No platform accounts configured</h3>
-                      <p className="text-slate-600 mb-4">Add platform accounts to start publishing content</p>
-                      <Button onClick={() => setShowAccountForm(true)}>
-                        Add Platform Account
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  Object.entries(
-                    platformAccounts.reduce((acc: any, account: PlatformAccount) => {
-                      if (!acc[account.platform]) acc[account.platform] = [];
-                      acc[account.platform].push(account);
-                      return acc;
-                    }, {})
-                  ).map(([platform, accounts]: [string, any]) => (
-                    <Card key={platform}>
-                      <CardHeader>
-                        <CardTitle className="capitalize">{platform} Accounts</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {accounts.map((account: PlatformAccount) => (
-                          <div key={account.id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{account.displayName}</span>
-                                <Badge variant={account.status === 'active' ? 'default' : 'secondary'}>
-                                  {account.status}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-slate-600">{account.accountName}</p>
-                              {account.lastUsed && (
-                                <p className="text-xs text-slate-500">
-                                  Last used: {new Date(account.lastUsed).toLocaleString()}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setEditingAccount(account.id)}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => deleteAccountMutation.mutate(account.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </CardContent>
-                      {editingAccount && accounts.find((a: PlatformAccount) => a.id === editingAccount) && (
-                        <CardContent>
-                          <PlatformAccountForm
-                            account={accounts.find((a: PlatformAccount) => a.id === editingAccount)}
-                            onSave={(data: any) => updateAccountMutation.mutate({ id: editingAccount, ...data })}
-                            onCancel={() => setEditingAccount(null)}
-                          />
-                        </CardContent>
-                      )}
-                    </Card>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="scheduling" className="space-y-6">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">Schedule Configuration</h2>
-                <p className="text-sm text-slate-600 mt-1">Configure automation schedules and posting times</p>
-              </div>
-
-              <Card>
-                <CardContent className="text-center py-8">
-                  <Clock className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-slate-900 mb-2">Schedule configuration coming soon</h3>
-                  <p className="text-slate-600">This section will contain global scheduling settings and automation rules</p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </main>
-      </div>
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm && (
+        <AlertDialog open={true} onOpenChange={() => setDeleteConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the {deleteConfirm.type === 'input' ? 'input source' : 'output destination'}.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  if (deleteConfirm.type === 'input') {
+                    handleDeleteInput(deleteConfirm.id);
+                  } else {
+                    handleDeleteOutput(deleteConfirm.id);
+                  }
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
