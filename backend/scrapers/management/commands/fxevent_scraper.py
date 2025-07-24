@@ -18,10 +18,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-try:
-    from webdriver_manager.chrome import ChromeDriverManager
-except ImportError:
-    ChromeDriverManager = None
 
 logger = logging.getLogger(__name__)
 
@@ -131,10 +127,8 @@ class Command(BaseCommand):
             options.add_argument("--headless")  # Run in headless mode
             options.add_argument("--window-size=1920,1080")  # Set larger window size
             
-            if ChromeDriverManager:
-                driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-            else:
-                driver = webdriver.Chrome(options=options)
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
+            driver = webdriver.Chrome(service=ChromeService(chromedriver_path), options=options)
             
             # Navigate to calendar page
             driver.get(url)
@@ -339,32 +333,30 @@ class Command(BaseCommand):
             self.stdout.write("-" * 50)
     
     def save_events(self, events):
-        """Save events to database after filtering for allowed currencies"""
+        """Save only HIGH impact events to database after filtering for allowed currencies"""
         saved_count = 0
         for event in events:
             # Skip events for currencies we don't want
             if event['currency'] not in self.ALLOWED_CURRENCIES:
                 continue
-                
+            # Only save HIGH impact events
+            if event.get('impact', '').upper() != 'HIGH':
+                continue
             try:
                 # Parse the date correctly from format like "May27Tuesday"
                 day_str = event['day']
                 # Extract month and day
                 month = day_str[:3]  # Get first 3 chars (May)
                 day = ''.join(filter(str.isdigit, day_str))  # Extract numbers (27)
-                
                 # Create date string and parse
                 date_str = f"{month} {day}"
                 day_date = datetime.strptime(date_str, '%b %d').replace(year=datetime.now().year)
-                
                 # Clean impact level
                 impact = event['impact'].upper() if event['impact'] else 'LOW'
                 if impact not in ['HIGH', 'MED', 'LOW']:
                     impact = 'LOW'
-                
                 # Clean the previous value (remove asterisk if present)
                 previous = event['previous'].replace('*', '') if event['previous'] else None
-                
                 # Create or update the event
                 economic_event, created = EconomicEvent.objects.update_or_create(
                     day=day_date,
@@ -379,9 +371,86 @@ class Command(BaseCommand):
                     }
                 )
                 saved_count += 1
-                
             except Exception as e:
                 logger.error(f"Error saving event {event}: {str(e)}")
                 continue
-                
-        return saved_count 
+        return saved_count
+    
+    def refresh_actual_values_for_recent_events(self, minutes_after=5):
+        """
+        Update the 'actual' field for HIGH impact events that have just passed.
+        Finds events for today whose scheduled time is within the last `minutes_after` minutes,
+        re-scrapes the event data, and updates the 'actual' field in the database.
+        """
+        from scrapers.models import EconomicEvent
+        from datetime import datetime, timedelta
+        import pytz
+
+        now = datetime.now(pytz.UTC)
+        today = now.date()
+        # Get all HIGH impact events for today with NULL/empty actual and time <= now
+        events = EconomicEvent.objects.filter(
+            day=today,
+            impact='HIGH',
+        ).exclude(actual__isnull=False).order_by('time')
+
+        updated_count = 0
+        for event in events:
+            # Parse event time (assume HH:MM format)
+            try:
+                event_time = datetime.strptime(f"{event.day} {event.time}", "%Y-%m-%d %H:%M")
+                event_time = pytz.UTC.localize(event_time)
+            except Exception:
+                continue
+            # Check if event time is within the last `minutes_after` minutes
+            if 0 <= (now - event_time).total_seconds() <= minutes_after * 60:
+                # Re-scrape the event (reuse your scraping logic, e.g., scrape_with_requests or scrape_with_selenium)
+                # For simplicity, let's call scrape_with_requests for the whole day and update the matching event
+                calendar_url = 'https://www.babypips.com/economic-calendar/'
+                scraped_events = self.scrape_with_requests(calendar_url, 1, 'high')
+                for scraped in scraped_events:
+                    if (
+                        scraped['event_name'] == event.event_name and
+                        scraped['currency'] == event.currency and
+                        scraped['time'] == event.time
+                    ):
+                        if scraped.get('actual'):
+                            event.actual = scraped['actual']
+                            event.save(update_fields=['actual'])
+                            updated_count += 1
+        self.stdout.write(self.style.SUCCESS(f"Updated 'actual' for {updated_count} recent events."))
+
+    def update_single_event_actual(self, event_id):
+        """
+        Update the 'actual' value for a single event by re-scraping the event data.
+        Returns a dict with status and updated value.
+        """
+        from scrapers.models import EconomicEvent
+        from datetime import datetime
+        import pytz
+
+        try:
+            event = EconomicEvent.objects.get(id=event_id)
+        except EconomicEvent.DoesNotExist:
+            return {'status': 'not_found', 'event_id': event_id}
+
+        # Scrape events for the event's day
+        calendar_url = 'https://www.babypips.com/economic-calendar/'
+        scraped_events = self.scrape_with_requests(calendar_url, 1, 'high')
+        updated = False
+        for scraped in scraped_events:
+            if (
+                scraped['event_name'] == event.event_name and
+                scraped['currency'] == event.currency and
+                scraped['time'] == event.time
+            ):
+                if scraped.get('actual') and scraped['actual'] != event.actual:
+                    event.actual = scraped['actual']
+                    event.save(update_fields=['actual'])
+                    updated = True
+                    break
+        return {
+            'status': 'updated' if updated else 'no_change',
+            'event_id': event_id,
+            'actual': event.actual
+        }

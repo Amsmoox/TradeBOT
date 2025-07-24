@@ -14,3 +14,10 @@ ERROR 2025-05-11 12:37:37,048 fxleaders_scraper Failed to log in to https://www.
 ERROR 2025-05-11 12:37:37,048 fxleaders_scraper Authentication failed. Cannot get forex signals
 INFO 2025-05-11 12:41:43,304 fxleaders_scraper Successfully logged in via Selenium
 INFO 2025-05-11 12:51:28,432 fxleaders_scraper Successfully logged in via Selenium
+ERROR 2025-06-23 22:03:45,141 fxleaders_scraper Error during authentication: [Errno 8] Exec format error: '/home/othmane/.wdm/drivers/chromedriver/linux64/137.0.7151.119/chromedriver-linux64/THIRD_PARTY_NOTICES.chromedriver'
+ERROR 2025-06-23 22:03:45,142 fxleaders_scraper Authentication failed
+ERROR 2025-06-23 23:22:00,844 fxleaders_scraper Error during login: [Errno 8] Exec format error: '/home/othmane/.wdm/drivers/chromedriver/linux64/137.0.7151.119/chromedriver-linux64/THIRD_PARTY_NOTICES.chromedriver'
+ERROR 2025-06-23 23:22:00,852 fxleaders_scraper Authentication failed
+INFO 2025-06-23 23:34:14,111 fxleaders_scraper Successfully logged in
+ERROR 2025-06-24 09:07:36,741 fxleaders_scraper Error during authentication: [Errno 8] Exec format error: '/home/othmane/.wdm/drivers/chromedriver/linux64/137.0.7151.119/chromedriver-linux64/THIRD_PARTY_NOTICES.chromedriver'
+ERROR 2025-06-24 09:13:36,777 fxleaders_scraper Error during authentication: [Errno 8] Exec format error: '/home/othmane/.wdm/drivers/chromedriver/linux64/137.0.7151.119/chromedriver-linux64/THIRD_PARTY_NOTICES.chromedriver'

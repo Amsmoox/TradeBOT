@@ -217,7 +217,7 @@ def send_new_signals_to_telegram(new_signals_count):
             if signal.status_signal:
                 msg += f"<b>Status:</b> {signal.status_signal}\n"
                 
-            msg += f"\n<i>🕐 {signal.scrape_date.strftime('%H:%M')} | 🤖 Auto Delta-Scrape</i>"
+            msg += f"\n<i>🕐 {signal.scrape_date.strftime('%H:%M')}</i>"
             
             result = bot.send_message(msg)
             if result.get('success'):
@@ -288,4 +288,4 @@ def watermark_info(request):
         return Response({
             'status': 'error',
             'message': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
