@@ -83,7 +83,7 @@ export function MarketUpdates() {
                 </p>
               </div>
               <div className="ml-4">
-                <Badge className="bg-green-100 text-green-800">Posted</Badge>
+                <Badge className="!bg-green-600 !text-white !border-green-700 !border-2 shadow-md">Posted</Badge>
               </div>
             </div>
           </div>

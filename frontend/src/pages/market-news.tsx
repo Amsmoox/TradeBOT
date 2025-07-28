@@ -376,7 +376,7 @@ export default function MarketNews() {
                                 {post.status}
                               </Badge>
                               {post.aiEnhanced && (
-                                <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                <Badge className="!bg-purple-600 !text-white !border-purple-700 !border-2 shadow-md">
                                   AI Enhanced
                                 </Badge>
                               )}

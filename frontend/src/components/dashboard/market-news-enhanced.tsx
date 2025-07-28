@@ -270,8 +270,8 @@ export default function MarketNewsEnhanced() {
                     {item.title}
                   </h2>
                   {item.aiGenerated && (
-                    <Badge className="bg-purple-100 text-purple-800 text-xs">
-                      AI Generated
+                                        <Badge className="!bg-purple-600 !text-white !border-purple-700 !border-2 shadow-md text-xs">
+                      {item.category}
                     </Badge>
                   )}
                   <Badge className={getImpactColor(item.impact)}>
@@ -309,12 +309,12 @@ export default function MarketNewsEnhanced() {
                 
                 <div className="flex items-center space-x-2">
                   {item.posted ? (
-                    <Badge className="bg-green-100 text-green-800">
+                    <Badge className="!bg-green-600 !text-white !border-green-700 !border-2 shadow-md">
                       <Eye className="w-3 h-3 mr-1" />
                       Posted
                     </Badge>
                   ) : (
-                    <Badge variant="outline">
+                    <Badge className="!bg-gray-600 !text-white !border-gray-700 !border-2 shadow-md">
                       Pending
                     </Badge>
                   )}

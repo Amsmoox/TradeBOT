@@ -341,7 +341,9 @@ export default function EconomicCalendar() {
                       }}
                     />
                     <Label htmlFor={account.id} className="flex items-center gap-2">
-                      <Badge variant="outline">{account.platform}</Badge>
+                                                      <Badge key={index} className="!bg-emerald-600 !text-white !border-emerald-700 !border-2 shadow-md">
+                                  {tag}
+                                </Badge>
                       {account.displayName}
                     </Label>
                   </div>
@@ -465,7 +467,7 @@ export default function EconomicCalendar() {
                             </div>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <Badge variant="outline">{source.type}</Badge>
+                            <Badge className="!bg-slate-600 !text-white !border-slate-700 !border-2 shadow-md">{source.type}</Badge>
                           </div>
                         </div>
                       ))}
@@ -704,7 +706,7 @@ export default function EconomicCalendar() {
                               <Badge variant={event.impact === 'HIGH' ? 'destructive' : event.impact === 'MEDIUM' ? 'default' : 'secondary'}>
                                 {event.impact}
                               </Badge>
-                              <Badge variant="outline">{event.currency}</Badge>
+                              <Badge className="!bg-blue-600 !text-white !border-blue-700 !border-2 shadow-md">{event.currency}</Badge>
                               <span className="font-medium">{event.title}</span>
                             </div>
                             <div className="text-sm text-slate-600 mt-1">

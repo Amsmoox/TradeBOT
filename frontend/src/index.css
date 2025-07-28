@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global Badge Styling Override */
+@layer components {
+  .badge-solid {
+    @apply !bg-slate-700 !text-white !border-slate-800 !border-2 !shadow-md !opacity-100;
+  }
+  
+  /* Override any transparent badge variants globally */
+  [data-badge="outline"] {
+    @apply !bg-slate-700 !text-white !border-slate-800 !border-2 !shadow-md !opacity-100;
+  }
+}
+
 :root {
   --background: hsl(0, 0%, 100%);
   --foreground: hsl(20, 14.3%, 4.1%);

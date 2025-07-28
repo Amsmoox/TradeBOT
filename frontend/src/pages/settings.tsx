@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings as SettingsIcon, Plus, Edit, Trash2, ToggleLeft, ToggleRight, Save, X } from "lucide-react";
+import { Settings as SettingsIcon, Plus, Edit, Trash2, ToggleLeft, ToggleRight, Save, X, BarChart3, Link, Clock, TrendingUp, Zap, FileText, Target, MessageCircle, Twitter, Hash, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,19 +137,41 @@ export default function Settings() {
   });
 
   const getPlatformIcon = (platform: string) => {
-    const icons = {
-      'Telegram': '📱',
-      'Twitter': '🐦',
-      'Discord': '💬',
-      'WhatsApp': '📲'
-    };
-    return icons[platform as keyof typeof icons] || '🌐';
+    switch (platform) {
+      case 'Telegram':
+        return <MessageCircle className="w-4 h-4" />;
+      case 'Twitter':
+        return <Twitter className="w-4 h-4" />;
+      case 'Discord':
+        return <Hash className="w-4 h-4" />;
+      case 'WhatsApp':
+        return <Phone className="w-4 h-4" />;
+      default:
+        return <Link className="w-4 h-4" />;
+    }
   };
 
   const getMethodBadge = (method: string) => {
     return method === 'API' 
-      ? 'bg-green-100 text-green-800' 
-      : 'bg-blue-100 text-blue-800';
+      ? '!bg-emerald-700 !text-white !border-emerald-800 !border-2 shadow-md' 
+      : '!bg-sky-700 !text-white !border-sky-800 !border-2 shadow-md';
+  };
+
+  // Custom Badge Component for maximum control
+  const CustomBadge = ({ children, className, style }: { children: React.ReactNode, className?: string, style?: any }) => {
+    return (
+      <span 
+        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${className}`}
+        style={{
+          backgroundColor: '#1f2937', // Force dark background
+          color: '#ffffff', // Force white text
+          border: '2px solid #111827', // Force dark border
+          ...style
+        }}
+      >
+        {children}
+      </span>
+    );
   };
 
   // Input source CRUD operations
@@ -312,7 +334,7 @@ export default function Settings() {
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">📊</span>
+                    <BarChart3 className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">Data Sources</h2>
@@ -334,7 +356,15 @@ export default function Settings() {
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
                         <h3 className="font-semibold text-slate-900 text-sm">{source.name}</h3>
-                        <Badge className={`${getMethodBadge(source.method)} text-xs`}>
+                        <Badge 
+                          className={`${getMethodBadge(source.method)} text-xs font-bold`}
+                          style={{
+                            backgroundColor: source.method === 'API' ? '#047857' : '#0369a1',
+                            color: '#ffffff',
+                            border: '2px solid ' + (source.method === 'API' ? '#064e3b' : '#0c4a6e'),
+                            opacity: 1
+                          }}
+                        >
                           {source.method}
                         </Badge>
                       </div>
@@ -363,7 +393,7 @@ export default function Settings() {
                     <div className="text-xs space-y-1">
                       <p className="text-slate-600 truncate">{source.endpoint}</p>
                       <div className="flex items-center justify-between">
-                        <Badge variant="outline" className="text-xs">
+                        <Badge className="!bg-slate-900 !text-white !border-slate-950 !border-2 text-xs font-bold shadow-md">
                           {source.type}
                         </Badge>
                         <span className={`text-xs font-medium ${source.status ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -383,7 +413,7 @@ export default function Settings() {
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">🔗</span>
+                    <Link className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">Platform Accounts</h2>
@@ -404,7 +434,9 @@ export default function Settings() {
                   <div key={dest.id} className="bg-white/50 rounded-xl border border-slate-200/50 p-4 hover:bg-white/70 transition-all">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
-                        <span className="text-lg">{getPlatformIcon(dest.platform)}</span>
+                        <div className="w-8 h-8 bg-gradient-to-br from-slate-500 to-slate-600 rounded-lg flex items-center justify-center text-white">
+                          {getPlatformIcon(dest.platform)}
+                        </div>
                         <div>
                           <h3 className="font-semibold text-slate-900 text-sm">{dest.label}</h3>
                           <p className="text-xs text-slate-600">{dest.accountId}</p>
@@ -433,10 +465,10 @@ export default function Settings() {
                     </div>
                     
                     <div className="flex items-center justify-between text-xs">
-                      <Badge variant="outline" className="text-xs">
+                      <Badge className="!bg-purple-600 !text-white !border-purple-700 !border-2 text-xs font-bold shadow-md">
                         {dest.platform}
                       </Badge>
-                      <Badge className={`${dest.status ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800'} text-xs`}>
+                      <Badge className={`${dest.status ? '!bg-green-600 !text-white !border-green-700' : '!bg-red-600 !text-white !border-red-700'} !border-2 text-xs font-bold shadow-md`}>
                         {dest.status ? 'Active' : 'Inactive'}
                       </Badge>
                     </div>
@@ -451,7 +483,7 @@ export default function Settings() {
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-6">
               <div className="flex items-center space-x-3 mb-6">
                 <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">⏰</span>
+                  <Clock className="w-4 h-4 text-white" />
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">Scheduling</h2>
@@ -575,24 +607,24 @@ export default function Settings() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="flex items-center space-x-1">
-                        <span>📊</span>
+                        <TrendingUp className="w-3 h-3" />
                         <span>Economic</span>
                       </span>
-                      <Badge className="bg-blue-100 text-blue-800 text-xs">Immediate</Badge>
+                      <Badge className="!bg-blue-700 !text-white !border-blue-800 !border-2 text-xs font-bold shadow-md">Immediate</Badge>
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="flex items-center space-x-1">
-                        <span>⚡</span>
+                        <Zap className="w-3 h-3" />
                         <span>Signals</span>
                       </span>
-                      <Badge className="bg-green-100 text-green-800 text-xs">5min</Badge>
+                      <Badge className="!bg-green-700 !text-white !border-green-800 !border-2 text-xs font-bold shadow-md">5min</Badge>
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="flex items-center space-x-1">
-                        <span>📰</span>
+                        <FileText className="w-3 h-3" />
                         <span>News</span>
                       </span>
-                      <Badge className="bg-yellow-100 text-yellow-800 text-xs">30min</Badge>
+                      <Badge className="!bg-orange-700 !text-white !border-orange-800 !border-2 text-xs font-bold shadow-md">30min</Badge>
                     </div>
                   </div>
                 </div>
@@ -606,7 +638,7 @@ export default function Settings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold">🎯</span>
+                <Target className="w-6 h-6 text-white" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900">System Status</h3>

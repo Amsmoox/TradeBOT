@@ -226,17 +226,16 @@ export default function TradingSignalsEnhanced() {
     // Template formatting logic
     const formatSignalForTemplate = (signal: TradingSignal, template: string) => {
       const templates = {
-        'Premium Signal Template': `🚨 PREMIUM SIGNAL 🚨
-💱 ${signal.symbol}
-📈 Direction: ${signal.direction}
-💰 Entry: ${signal.entryPrice}
-🛑 SL: ${signal.stopLoss}
-🎯 TP: ${signal.takeProfit}
-⚡ Probability: ${signal.probability}%
-📊 R/R: ${signal.riskReward}
-🔍 Analysis: ${signal.analysis}${signal.gptAnalysis ? '\n🤖 AI: ' + signal.gptAnalysis : ''}`,
+        'Premium Signal Template': `� PREMIUM SIGNAL
+${signal.symbol} ${signal.direction}
+Entry: ${signal.entryPrice}
+Stop Loss: ${signal.stopLoss}
+Take Profit: ${signal.takeProfit}
+Probability: ${signal.probability}%
+Risk/Reward: ${signal.riskReward}
+Analysis: ${signal.analysis}${signal.gptAnalysis ? '\nAI Analysis: ' + signal.gptAnalysis : ''}`,
         
-        'Standard Signal Template': `📊 ${signal.symbol} ${signal.direction}
+        'Standard Signal Template': `${signal.symbol} ${signal.direction}
 Entry: ${signal.entryPrice}
 SL: ${signal.stopLoss} | TP: ${signal.takeProfit}
 Confidence: ${signal.probability}%`,
@@ -264,16 +263,16 @@ Risk/Reward: ${signal.riskReward}`
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Active': return 'bg-green-100 text-green-800';
-      case 'Pending': return 'bg-yellow-100 text-yellow-800';
-      case 'Executed': return 'bg-blue-100 text-blue-800';
-      case 'Closed': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-slate-100 text-slate-800';
+      case 'Active': return '!bg-green-600 !text-white !border-green-700 !border-2 shadow-md';
+      case 'Pending': return '!bg-yellow-600 !text-white !border-yellow-700 !border-2 shadow-md';
+      case 'Executed': return '!bg-blue-600 !text-white !border-blue-700 !border-2 shadow-md';
+      case 'Closed': return '!bg-gray-600 !text-white !border-gray-700 !border-2 shadow-md';
+      default: return '!bg-slate-600 !text-white !border-slate-700 !border-2 shadow-md';
     }
   };
 
   const getDirectionColor = (direction: string) => {
-    return direction === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+    return direction === 'BUY' ? '!bg-green-600 !text-white !border-green-700 !border-2 shadow-md' : '!bg-red-600 !text-white !border-red-700 !border-2 shadow-md';
   };
 
   const formatTime = (timestamp: string) => {
@@ -418,7 +417,7 @@ Risk/Reward: ${signal.riskReward}`
                 <Badge className={getStatusColor(signal.status)}>
                   {signal.status}
                 </Badge>
-                <Badge variant="outline">{signal.signalType}</Badge>
+                <Badge className="!bg-indigo-600 !text-white !border-indigo-700 !border-2 shadow-md">{signal.signalType}</Badge>
               </div>
             </div>
 
@@ -490,7 +489,7 @@ Risk/Reward: ${signal.riskReward}`
                   <div className="flex items-center space-x-1">
                     <span className="text-xs text-slate-500">Published to:</span>
                     {signal.publishedTo.map(platform => (
-                      <Badge key={platform} variant="outline" className="text-xs">
+                      <Badge key={platform} className="!bg-purple-600 !text-white !border-purple-700 !border-2 shadow-md text-xs">
                         {platform}
                       </Badge>
                     ))}

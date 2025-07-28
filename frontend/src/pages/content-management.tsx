@@ -219,8 +219,8 @@ export default function ContentManagement() {
                              post.type === 'signal' ? 'Signal' : 'Custom'}
                           </Badge>
                           {post.aiEnhanced && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                              AI Enhanced
+                                                        <Badge className="!bg-purple-600 !text-white !border-purple-700 !border-2 shadow-md">
+                              {Array.isArray(post.platforms) ? post.platforms.join(', ') : ''}
                             </Badge>
                           )}
                         </div>

@@ -10,10 +10,10 @@ export function EconomicCalendar() {
 
   const getImpactColor = (impact: string) => {
     switch (impact?.toUpperCase()) {
-      case 'HIGH': return 'bg-red-100 text-red-800';
-      case 'MEDIUM': return 'bg-orange-100 text-orange-800';
-      case 'LOW': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'HIGH': return '!bg-red-600 !text-white !border-red-700 !border-2 shadow-md';
+      case 'MEDIUM': return '!bg-orange-600 !text-white !border-orange-700 !border-2 shadow-md';
+      case 'LOW': return '!bg-yellow-600 !text-white !border-yellow-700 !border-2 shadow-md';
+      default: return '!bg-gray-600 !text-white !border-gray-700 !border-2 shadow-md';
     }
   };
 

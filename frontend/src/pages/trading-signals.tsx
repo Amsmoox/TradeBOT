@@ -170,7 +170,7 @@ export default function TradingSignals() {
                     <div className="flex items-center space-x-3">
                       <div className={`w-3 h-3 rounded-full ${source.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}></div>
                       <h3 className="font-semibold text-slate-900">{source.name}</h3>
-                      <Badge variant="outline" className="capitalize">
+                      <Badge className="!bg-indigo-600 !text-white !border-indigo-700 !border-2 shadow-md capitalize">
                         {source.type}
                       </Badge>
                     </div>
@@ -634,7 +634,7 @@ Source: {source}
                               <span>{formatTimeAgo(signal.created_at)}</span>
                             </div>
                             <div className="flex items-center justify-between mt-2">
-                              <Badge variant="outline" className={signal.status === 'CLOSED' ? 'bg-gray-50 text-gray-700' : signal.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}>
+                              <Badge className={signal.status === 'CLOSED' ? '!bg-gray-600 !text-white !border-gray-700' : signal.status === 'ACTIVE' ? '!bg-green-600 !text-white !border-green-700' : '!bg-yellow-600 !text-white !border-yellow-700'}>
                                 {signal.status}
                               </Badge>
                               <div className="flex space-x-1">
@@ -731,7 +731,7 @@ Source: {source}
                               {formatTimeAgo(signal.created_at)}
                             </p>
                             <div className="flex items-center space-x-2 mt-2">
-                              <Badge variant="outline" className={signal.status === 'CLOSED' ? 'bg-gray-50 text-gray-700' : 'bg-green-50 text-green-700'}>
+                              <Badge className={signal.status === 'CLOSED' ? '!bg-gray-600 !text-white !border-gray-700' : '!bg-green-600 !text-white !border-green-700'}>
                                 {signal.status === 'CLOSED' ? 'Posted' : 'Pending'}
                               </Badge>
                               <Button variant="ghost" size="sm">
