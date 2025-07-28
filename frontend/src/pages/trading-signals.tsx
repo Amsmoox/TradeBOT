@@ -403,7 +403,7 @@ Source: {source}
 
     return (
       <Dialog open={isAddSourceModalOpen} onOpenChange={setIsAddSourceModalOpen}>
-        <DialogContent className="sm:max-w-[525px]">
+        <DialogContent className="sm:max-w-[525px] !bg-white/95 !backdrop-blur-xl !border-slate-200/50 !shadow-2xl">
           <DialogHeader>
             <DialogTitle>Add New Signal Source</DialogTitle>
             <DialogDescription>

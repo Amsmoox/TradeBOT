@@ -153,7 +153,7 @@ export function ContentCreatorModal({ isOpen, onClose }: ContentCreatorModalProp
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto !bg-white/95 !backdrop-blur-xl !border-slate-200/50 !shadow-2xl">
         <DialogHeader>
           <DialogTitle>Create New Content</DialogTitle>
         </DialogHeader>

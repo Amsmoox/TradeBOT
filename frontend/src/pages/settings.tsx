@@ -733,7 +733,7 @@ export default function Settings() {
 
       {/* Input Source Dialog */}
       <Dialog open={showInputDialog} onOpenChange={setShowInputDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl !bg-white/95 !backdrop-blur-xl !border-slate-200/50 !shadow-2xl">
           <DialogHeader>
             <DialogTitle>{editingInput ? 'Edit Input Source' : 'Add Input Source'}</DialogTitle>
           </DialogHeader>
@@ -807,7 +807,7 @@ export default function Settings() {
             )}
 
             {inputForm.method === 'Scraping' && inputForm.type === 'Trading Signals' && (
-              <div className="space-y-4 p-4 border rounded-lg bg-slate-50/50">
+              <div className="space-y-4 p-4 border rounded-lg bg-gradient-to-br from-blue-50/50 to-slate-50/30 border-blue-200/30 shadow-sm">
                 <div className="flex items-center gap-2 mb-3">
                   <Key className="h-4 w-4 text-blue-600" />
                   <Label className="text-sm font-medium">FXLeaders Login Credentials</Label>
@@ -893,7 +893,7 @@ export default function Settings() {
 
       {/* Output Destination Dialog */}
       <Dialog open={showOutputDialog} onOpenChange={setShowOutputDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl !bg-white/95 !backdrop-blur-xl !border-slate-200/50 !shadow-2xl">
           <DialogHeader>
             <DialogTitle>{editingOutput ? 'Edit Output Destination' : 'Add Output Destination'}</DialogTitle>
           </DialogHeader>
@@ -951,7 +951,7 @@ export default function Settings() {
 
             {/* Platform-specific credential fields */}
             {(outputForm.platform === 'Twitter' || outputForm.platform === 'Discord') && (
-              <div className="space-y-4 p-4 border rounded-lg bg-slate-50/50">
+              <div className="space-y-4 p-4 border rounded-lg bg-gradient-to-br from-blue-50/50 to-slate-50/30 border-blue-200/30 shadow-sm">
                 <div className="flex items-center gap-2 mb-3">
                   <Shield className="h-4 w-4 text-blue-600" />
                   <Label className="text-sm font-medium">
@@ -1087,7 +1087,7 @@ export default function Settings() {
       {/* Delete Confirmation Dialog */}
       {deleteConfirm && (
         <AlertDialog open={true} onOpenChange={() => setDeleteConfirm(null)}>
-          <AlertDialogContent>
+          <AlertDialogContent className="!bg-white/95 !backdrop-blur-xl !border-slate-200/50 !shadow-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
               <AlertDialogDescription>
