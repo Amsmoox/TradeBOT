@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings as SettingsIcon, Plus, Edit, Trash2, ToggleLeft, ToggleRight, Save, X, BarChart3, Link, Clock, TrendingUp, Zap, FileText, Target, MessageCircle, Twitter, Hash, Phone } from "lucide-react";
+import { Settings as SettingsIcon, Plus, Edit, Trash2, ToggleLeft, ToggleRight, Save, X, BarChart3, Link, Clock, TrendingUp, Zap, FileText, Target, MessageCircle, Twitter, Hash, Phone, Key, Shield, Eye, EyeOff, CheckCircle, AlertCircle, TestTube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,6 +109,18 @@ export default function Settings() {
   const [showInputDialog, setShowInputDialog] = useState(false);
   const [showOutputDialog, setShowOutputDialog] = useState(false);
   
+  // Credential visibility states
+  const [showCredentials, setShowCredentials] = useState({
+    input: false,
+    output: false
+  });
+  
+  // Connection testing states
+  const [testingConnection, setTestingConnection] = useState({
+    input: false,
+    output: false
+  });
+  
   // Scheduling state
   const [scheduleSettings, setScheduleSettings] = useState({
     autoPost: true,
@@ -125,6 +137,8 @@ export default function Settings() {
     method: 'API' as InputSource['method'],
     endpoint: '',
     apiKey: '',
+    username: '',
+    password: '',
     configText: '{}'
   });
   
@@ -133,6 +147,10 @@ export default function Settings() {
     label: '',
     accountId: '',
     token: '',
+    apiKey: '',
+    apiSecret: '',
+    accessToken: '',
+    accessTokenSecret: '',
     configText: '{}'
   });
 
@@ -174,6 +192,44 @@ export default function Settings() {
     );
   };
 
+    // Helper functions for credential management
+  const toggleCredentialVisibility = (type: 'input' | 'output') => {
+    setShowCredentials(prev => ({
+      ...prev,
+      [type]: !prev[type]
+    }));
+  };
+
+  const testInputConnection = async () => {
+    setTestingConnection(prev => ({ ...prev, input: true }));
+    try {
+      // TODO: API call to test input source connection
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
+      console.log('Testing input connection:', inputForm);
+      // Show success notification
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      // Show error notification
+    } finally {
+      setTestingConnection(prev => ({ ...prev, input: false }));
+    }
+  };
+
+  const testOutputConnection = async () => {
+    setTestingConnection(prev => ({ ...prev, output: true }));
+    try {
+      // TODO: API call to test output destination connection
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
+      console.log('Testing output connection:', outputForm);
+      // Show success notification
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      // Show error notification
+    } finally {
+      setTestingConnection(prev => ({ ...prev, output: false }));
+    }
+  };
+
   // Input source CRUD operations
   const handleAddInput = () => {
     setInputForm({ 
@@ -181,7 +237,9 @@ export default function Settings() {
       type: 'Economic Calendar', 
       method: 'API', 
       endpoint: '', 
-      apiKey: '', 
+      apiKey: '',
+      username: '',
+      password: '',
       configText: '{}' 
     });
     setEditingInput(null);
@@ -195,6 +253,8 @@ export default function Settings() {
       method: source.method,
       endpoint: source.endpoint,
       apiKey: source.config.apiKey || '',
+      username: source.config.username || '',
+      password: source.config.password || '',
       configText: JSON.stringify(source.config, null, 2)
     });
     setEditingInput(source);
@@ -249,6 +309,10 @@ export default function Settings() {
       label: '', 
       accountId: '', 
       token: '', 
+      apiKey: '',
+      apiSecret: '',
+      accessToken: '',
+      accessTokenSecret: '',
       configText: '{}' 
     });
     setEditingOutput(null);
@@ -261,6 +325,10 @@ export default function Settings() {
       label: dest.label,
       accountId: dest.accountId,
       token: dest.token,
+      apiKey: dest.config.apiKey || '',
+      apiSecret: dest.config.apiSecret || '',
+      accessToken: dest.config.accessToken || '',
+      accessTokenSecret: dest.config.accessTokenSecret || '',
       configText: JSON.stringify(dest.config, null, 2)
     });
     setEditingOutput(dest);
@@ -738,6 +806,67 @@ export default function Settings() {
               </div>
             )}
 
+            {inputForm.method === 'Scraping' && inputForm.type === 'Trading Signals' && (
+              <div className="space-y-4 p-4 border rounded-lg bg-slate-50/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <Key className="h-4 w-4 text-blue-600" />
+                  <Label className="text-sm font-medium">FXLeaders Login Credentials</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleCredentialVisibility('input')}
+                    className="h-6 w-6 p-0 ml-auto"
+                  >
+                    {showCredentials.input ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  </Button>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                      id="username"
+                      type={showCredentials.input ? "text" : "password"}
+                      value={inputForm.username}
+                      onChange={(e) => setInputForm(prev => ({...prev, username: e.target.value}))}
+                      placeholder="FXLeaders username"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type={showCredentials.input ? "text" : "password"}
+                      value={inputForm.password}
+                      onChange={(e) => setInputForm(prev => ({...prev, password: e.target.value}))}
+                      placeholder="FXLeaders password"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => testInputConnection()}
+                    disabled={testingConnection.input || !inputForm.username || !inputForm.password}
+                    className="flex items-center gap-2"
+                  >
+                    {testingConnection.input ? (
+                      <TestTube className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <TestTube className="h-3 w-3" />
+                    )}
+                    Test Connection
+                  </Button>
+                  
+                  {/* Connection status will be shown here after testing */}
+                </div>
+              </div>
+            )}
+
             <div>
               <Label htmlFor="config">Configuration (JSON)</Label>
               <Textarea
@@ -819,6 +948,117 @@ export default function Settings() {
                 />
               </div>
             </div>
+
+            {/* Platform-specific credential fields */}
+            {(outputForm.platform === 'Twitter' || outputForm.platform === 'Discord') && (
+              <div className="space-y-4 p-4 border rounded-lg bg-slate-50/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <Shield className="h-4 w-4 text-blue-600" />
+                  <Label className="text-sm font-medium">
+                    {outputForm.platform === 'Twitter' ? 'Twitter API Credentials' : 'Discord Bot Credentials'}
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleCredentialVisibility('output')}
+                    className="h-6 w-6 p-0 ml-auto"
+                  >
+                    {showCredentials.output ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  </Button>
+                </div>
+                
+                {outputForm.platform === 'Twitter' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="apiKey">API Key</Label>
+                      <Input
+                        id="apiKey"
+                        type={showCredentials.output ? "text" : "password"}
+                        value={outputForm.apiKey}
+                        onChange={(e) => setOutputForm(prev => ({...prev, apiKey: e.target.value}))}
+                        placeholder="Twitter API Key"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="apiSecret">API Secret</Label>
+                      <Input
+                        id="apiSecret"
+                        type={showCredentials.output ? "text" : "password"}
+                        value={outputForm.apiSecret}
+                        onChange={(e) => setOutputForm(prev => ({...prev, apiSecret: e.target.value}))}
+                        placeholder="Twitter API Secret"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="accessToken">Access Token</Label>
+                      <Input
+                        id="accessToken"
+                        type={showCredentials.output ? "text" : "password"}
+                        value={outputForm.accessToken}
+                        onChange={(e) => setOutputForm(prev => ({...prev, accessToken: e.target.value}))}
+                        placeholder="Twitter Access Token"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="accessTokenSecret">Access Token Secret</Label>
+                      <Input
+                        id="accessTokenSecret"
+                        type={showCredentials.output ? "text" : "password"}
+                        value={outputForm.accessTokenSecret}
+                        onChange={(e) => setOutputForm(prev => ({...prev, accessTokenSecret: e.target.value}))}
+                        placeholder="Twitter Access Token Secret"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {outputForm.platform === 'Discord' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="apiKey">Application ID</Label>
+                      <Input
+                        id="apiKey"
+                        type={showCredentials.output ? "text" : "password"}
+                        value={outputForm.apiKey}
+                        onChange={(e) => setOutputForm(prev => ({...prev, apiKey: e.target.value}))}
+                        placeholder="Discord Application ID"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="apiSecret">Client Secret</Label>
+                      <Input
+                        id="apiSecret"
+                        type={showCredentials.output ? "text" : "password"}
+                        value={outputForm.apiSecret}
+                        onChange={(e) => setOutputForm(prev => ({...prev, apiSecret: e.target.value}))}
+                        placeholder="Discord Client Secret"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => testOutputConnection()}
+                    disabled={testingConnection.output || !outputForm.token}
+                    className="flex items-center gap-2"
+                  >
+                    {testingConnection.output ? (
+                      <TestTube className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <TestTube className="h-3 w-3" />
+                    )}
+                    Test Connection
+                  </Button>
+                  
+                  {/* Connection status will be shown here after testing */}
+                </div>
+              </div>
+            )}
 
             <div>
               <Label htmlFor="outputConfig">Platform Configuration (JSON)</Label>
