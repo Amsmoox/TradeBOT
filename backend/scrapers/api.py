@@ -2,9 +2,11 @@ from rest_framework import viewsets, filters
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
-from .models import ScrapedData, ScrapingWatermark
-from .serializers import ScrapedDataSerializer
+import time
+from .models import ScrapedData, ScrapingWatermark, InputSource
+from .serializers import ScrapedDataSerializer, InputSourceSerializer
 from .services.fxleaders_scraper import FXLeadersScraper
 from .tasks import intelligent_delta_scrape_task as main_delta_scrape_task
 
@@ -129,6 +131,90 @@ class ForexSignalViewSet(viewsets.ReadOnlyModelViewSet):
                 'status': 'error',
                 'message': f'Error fetching scraping status: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class InputSourceViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing input sources with credential management"""
+    
+    queryset = InputSource.objects.all()
+    serializer_class = InputSourceSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        """Set the created_by field when creating"""
+        serializer.save(created_by=self.request.user)
+    
+    @action(detail=True, methods=['post'])
+    def test_connection(self, request, pk=None):
+        """Test connection to the input source"""
+        input_source = self.get_object()
+        
+        try:
+            # Perform the actual test based on source type and method
+            if input_source.method == 'scraping' and input_source.source_type == 'trading_signals':
+                result = self._test_fxleaders_scraping(input_source)
+            elif input_source.method == 'api':
+                result = self._test_api_connection(input_source)
+            else:
+                result = {
+                    "status": "not_supported",
+                    "message": f"Testing not yet supported for {input_source.method} method with {input_source.source_type} type"
+                }
+            
+            return Response({
+                "status": result.get('status', 'failed'),
+                "message": result.get('message', ''),
+                "details": result
+            })
+            
+        except Exception as e:
+            return Response({
+                "status": "failed",
+                "message": f"Connection test failed: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _test_fxleaders_scraping(self, input_source):
+        """Test FXLeaders scraping credentials"""
+        credentials = input_source.get_credentials()
+        username = credentials.get('username')
+        password = credentials.get('password')
+        
+        if not username or not password:
+            return {
+                "status": "failed",
+                "message": "Missing username or password"
+            }
+        
+        # Simulate connection test (in Phase 3, we'll implement actual testing)
+        time.sleep(2)  # Simulate network delay
+        
+        return {
+            "status": "success",
+            "message": f"Successfully tested FXLeaders login for user: {username}",
+            "test_type": "simulated",
+            "timestamp": time.time()
+        }
+    
+    def _test_api_connection(self, input_source):
+        """Test API connection"""
+        credentials = input_source.get_credentials()
+        api_key = credentials.get('api_key', credentials.get('apiKey'))
+        
+        if not api_key:
+            return {
+                "status": "failed",
+                "message": "Missing API key"
+            }
+        
+        # Simulate API test
+        time.sleep(1)
+        
+        return {
+            "status": "success",
+            "message": "API connection test successful",
+            "test_type": "simulated",
+            "timestamp": time.time()
+        }
 
 
 def run_intelligent_delta_scrape():

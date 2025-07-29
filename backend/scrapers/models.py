@@ -1,5 +1,8 @@
 from django.db import models
 from django.utils import timezone
+from django.contrib.auth.models import User
+import json
+import base64
 
 class ScrapedData(models.Model):
     """Model to store scraped forex signals data from FX Leaders"""
@@ -108,3 +111,91 @@ class EconomicEvent(models.Model):
     
     def __str__(self):
         return f"{self.day} {self.time} - {self.currency} - {self.event_name}"
+
+# Simple encryption utility for credentials
+class SimpleEncryption:
+    """Simple base64 encoding for credential storage (enhance with proper encryption in production)"""
+    
+    @staticmethod
+    def encrypt_data(data):
+        """Simple base64 encoding"""
+        if not data:
+            return ""
+        return base64.b64encode(data.encode()).decode()
+    
+    @staticmethod
+    def decrypt_data(encrypted_data):
+        """Simple base64 decoding"""
+        if not encrypted_data:
+            return ""
+        try:
+            return base64.b64decode(encrypted_data.encode()).decode()
+        except Exception as e:
+            print(f"❌ Failed to decrypt data: {e}")
+            return ""
+
+class InputSource(models.Model):
+    """Model for managing input data sources with dynamic credentials"""
+    
+    SOURCE_TYPES = [
+        ('economic_calendar', 'Economic Calendar'),
+        ('trading_signals', 'Trading Signals'),
+        ('market_news', 'Market News'),
+    ]
+    
+    METHODS = [
+        ('api', 'API'),
+        ('scraping', 'Scraping'),
+    ]
+    
+    # Basic Information
+    name = models.CharField(max_length=100, help_text="Human-readable name for the source")
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPES, help_text="Type of content this source provides")
+    method = models.CharField(max_length=10, choices=METHODS, help_text="How to fetch data from this source")
+    endpoint_url = models.URLField(help_text="API endpoint or website URL")
+    
+    # Credential Storage (base64 encoded)
+    encrypted_credentials = models.TextField(blank=True, help_text="Base64 encoded JSON of credentials")
+    
+    # Metadata
+    is_active = models.BooleanField(default=True, help_text="Whether this source is currently active")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Configuration
+    config_json = models.TextField(default='{}', help_text="Additional configuration as JSON")
+    
+    def set_credentials(self, credentials_dict):
+        """Encrypt and store credentials"""
+        credentials_json = json.dumps(credentials_dict)
+        self.encrypted_credentials = SimpleEncryption.encrypt_data(credentials_json)
+    
+    def get_credentials(self):
+        """Decrypt and return credentials"""
+        if not self.encrypted_credentials:
+            return {}
+        try:
+            decrypted_json = SimpleEncryption.decrypt_data(self.encrypted_credentials)
+            return json.loads(decrypted_json) if decrypted_json else {}
+        except json.JSONDecodeError:
+            return {}
+    
+    def get_config(self):
+        """Return configuration as dict"""
+        try:
+            return json.loads(self.config_json)
+        except json.JSONDecodeError:
+            return {}
+    
+    def set_config(self, config_dict):
+        """Set configuration from dict"""
+        self.config_json = json.dumps(config_dict)
+    
+    def __str__(self):
+        return f"{self.name} ({self.get_source_type_display()})"
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Input Source"
+        verbose_name_plural = "Input Sources"

@@ -1,10 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .api import ForexSignalViewSet, manual_delta_scrape, watermark_info
+from .api import ForexSignalViewSet, InputSourceViewSet, manual_delta_scrape, watermark_info
 
 # Create a router and register our viewsets
 router = DefaultRouter()
 router.register(r'forex-signals', ForexSignalViewSet, basename='forex-signals')
+router.register(r'input-sources', InputSourceViewSet, basename='input-sources')
 
 # URL patterns for the scrapers app
 urlpatterns = [
