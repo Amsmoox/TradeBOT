@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 import json
 import base64
+from .utils.encryption import credential_manager
 
 class ScrapedData(models.Model):
     """Model to store scraped forex signals data from FX Leaders"""
@@ -167,19 +168,12 @@ class InputSource(models.Model):
     config_json = models.TextField(default='{}', help_text="Additional configuration as JSON")
     
     def set_credentials(self, credentials_dict):
-        """Encrypt and store credentials"""
-        credentials_json = json.dumps(credentials_dict)
-        self.encrypted_credentials = SimpleEncryption.encrypt_data(credentials_json)
+        """Encrypt and store credentials using Fernet encryption"""
+        self.encrypted_credentials = credential_manager.encrypt_credentials(credentials_dict)
     
     def get_credentials(self):
-        """Decrypt and return credentials"""
-        if not self.encrypted_credentials:
-            return {}
-        try:
-            decrypted_json = SimpleEncryption.decrypt_data(self.encrypted_credentials)
-            return json.loads(decrypted_json) if decrypted_json else {}
-        except json.JSONDecodeError:
-            return {}
+        """Decrypt and return credentials using Fernet encryption"""
+        return credential_manager.decrypt_credentials(self.encrypted_credentials)
     
     def get_config(self):
         """Return configuration as dict"""

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Settings as SettingsIcon, Plus, Edit, Trash2, ToggleLeft, ToggleRight, Save, X, BarChart3, Link, Clock, TrendingUp, Zap, FileText, Target, MessageCircle, Twitter, Hash, Phone, Key, Shield, Eye, EyeOff, CheckCircle, AlertCircle, TestTube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { apiClient, type InputSource as ApiInputSource, type OutputDestination as ApiOutputDestination, type CreateInputSourceRequest, type CreateOutputDestinationRequest } from '@/lib/api';
 
-// Types for better type safety
+// Types for better type safety (mapped from API types)
 interface InputSource {
   id: number;
   name: string;
@@ -29,6 +30,28 @@ interface OutputDestination {
   status: boolean;
   config: any;
 }
+
+// Map API types to local types
+const mapApiInputSource = (api: ApiInputSource): InputSource => ({
+  id: api.id,
+  name: api.name,
+  type: api.source_type === 'economic_calendar' ? 'Economic Calendar' :
+        api.source_type === 'trading_signals' ? 'Trading Signals' : 'Market News',
+  method: api.method === 'api' ? 'API' : 'Scraping',
+  endpoint: api.endpoint_url,
+  status: api.is_active,
+  config: api.config
+});
+
+const mapApiOutputDestination = (api: ApiOutputDestination): OutputDestination => ({
+  id: api.id,
+  platform: api.platform.charAt(0).toUpperCase() + api.platform.slice(1) as OutputDestination['platform'],
+  label: api.label,
+  accountId: api.account_id,
+  token: '', // Don't expose token in UI
+  status: api.is_active,
+  config: api.config
+});
 
 // Initial data with individual API keys/tokens per account
 const initialInputSources: InputSource[] = [
@@ -101,8 +124,17 @@ const initialOutputDestinations: OutputDestination[] = [
 ];
 
 export default function Settings() {
-  const [inputSources, setInputSources] = useState<InputSource[]>(initialInputSources);
-  const [outputDestinations, setOutputDestinations] = useState<OutputDestination[]>(initialOutputDestinations);
+  // Data states
+  const [inputSources, setInputSources] = useState<InputSource[]>([]);
+  const [outputDestinations, setOutputDestinations] = useState<OutputDestination[]>([]);
+  const [loading, setLoading] = useState({
+    inputs: true,
+    outputs: true,
+    saving: false,
+    testing: false
+  });
+  
+  // Dialog states
   const [editingInput, setEditingInput] = useState<InputSource | null>(null);
   const [editingOutput, setEditingOutput] = useState<OutputDestination | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{type: 'input' | 'output', id: number} | null>(null);
@@ -120,6 +152,36 @@ export default function Settings() {
     input: false,
     output: false
   });
+  
+  // Load data on component mount
+  useEffect(() => {
+    loadInputSources();
+    loadOutputDestinations();
+  }, []);
+
+  const loadInputSources = async () => {
+    setLoading(prev => ({ ...prev, inputs: true }));
+    try {
+      const inputSources = await apiClient.getInputSources();
+      setInputSources(inputSources.map(mapApiInputSource));
+    } catch (error) {
+      console.error('Error loading input sources:', error);
+    } finally {
+      setLoading(prev => ({ ...prev, inputs: false }));
+    }
+  };
+
+  const loadOutputDestinations = async () => {
+    setLoading(prev => ({ ...prev, outputs: true }));
+    try {
+      const outputDestinations = await apiClient.getOutputDestinations();
+      setOutputDestinations(outputDestinations.map(mapApiOutputDestination));
+    } catch (error) {
+      console.error('Error loading output destinations:', error);
+    } finally {
+      setLoading(prev => ({ ...prev, outputs: false }));
+    }
+  };
   
   // Scheduling state
   const [scheduleSettings, setScheduleSettings] = useState({
@@ -201,30 +263,44 @@ export default function Settings() {
   };
 
   const testInputConnection = async () => {
+    if (!editingInput) {
+      alert('Please save the input source first before testing connection');
+      return;
+    }
+    
     setTestingConnection(prev => ({ ...prev, input: true }));
     try {
-      // TODO: API call to test input source connection
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
-      console.log('Testing input connection:', inputForm);
-      // Show success notification
+      const result = await apiClient.testInputSourceConnection(editingInput.id);
+      if (result.status === 'success') {
+        alert(`✅ Connection test successful!\n${result.message}`);
+      } else {
+        alert(`❌ Connection test failed!\n${result.message}`);
+      }
     } catch (error) {
       console.error('Connection test failed:', error);
-      // Show error notification
+      alert('❌ Connection test failed! Please check your network connection.');
     } finally {
       setTestingConnection(prev => ({ ...prev, input: false }));
     }
   };
 
   const testOutputConnection = async () => {
+    if (!editingOutput) {
+      alert('Please save the output destination first before testing connection');
+      return;
+    }
+    
     setTestingConnection(prev => ({ ...prev, output: true }));
     try {
-      // TODO: API call to test output destination connection
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
-      console.log('Testing output connection:', outputForm);
-      // Show success notification
+      const result = await apiClient.testOutputDestinationConnection(editingOutput.id);
+      if (result.status === 'success') {
+        alert(`✅ Connection test successful!\n${result.message}`);
+      } else {
+        alert(`❌ Connection test failed!\n${result.message}`);
+      }
     } catch (error) {
       console.error('Connection test failed:', error);
-      // Show error notification
+      alert('❌ Connection test failed! Please check your network connection.');
     } finally {
       setTestingConnection(prev => ({ ...prev, output: false }));
     }
@@ -261,45 +337,94 @@ export default function Settings() {
     setShowInputDialog(true);
   };
 
-  const handleSaveInput = () => {
+  const handleSaveInput = async () => {
+    setLoading(prev => ({ ...prev, saving: true }));
     try {
       const config = JSON.parse(inputForm.configText);
-      if (inputForm.apiKey) {
-        config.apiKey = inputForm.apiKey;
-      }
-
-      const newSource: InputSource = {
-        id: editingInput?.id || Date.now(),
-        name: inputForm.name,
-        type: inputForm.type,
-        method: inputForm.method,
-        endpoint: inputForm.endpoint,
-        status: editingInput?.status ?? true,
-        config
-      };
-
-      if (editingInput) {
-        setInputSources(prev => prev.map(s => s.id === editingInput.id ? newSource : s));
-      } else {
-        setInputSources(prev => [...prev, newSource]);
-      }
       
+      // Prepare credentials based on method
+      const credentials: Record<string, string> = {};
+      if (inputForm.method === 'API' && inputForm.apiKey) {
+        credentials.apiKey = inputForm.apiKey;
+      } else if (inputForm.method === 'Scraping' && inputForm.type === 'Trading Signals') {
+        if (inputForm.username) credentials.username = inputForm.username;
+        if (inputForm.password) credentials.password = inputForm.password;
+      }
+
+      let response: ApiInputSource;
+      if (editingInput) {
+        const updateData: Partial<ApiInputSource> = {
+          name: inputForm.name,
+          source_type: inputForm.type === 'Economic Calendar' ? 'economic_calendar' :
+                      inputForm.type === 'Trading Signals' ? 'trading_signals' : 'market_news',
+          method: inputForm.method.toLowerCase() as 'api' | 'scraping',
+          endpoint_url: inputForm.endpoint,
+          credentials,
+          config,
+          is_active: editingInput.status
+        };
+        response = await apiClient.updateInputSource(editingInput.id, updateData);
+      } else {
+        const requestData: CreateInputSourceRequest = {
+          name: inputForm.name,
+          source_type: inputForm.type === 'Economic Calendar' ? 'economic_calendar' :
+                      inputForm.type === 'Trading Signals' ? 'trading_signals' : 'market_news',
+          method: inputForm.method.toLowerCase() as 'api' | 'scraping',
+          endpoint_url: inputForm.endpoint,
+          credentials,
+          config,
+          is_active: true
+        };
+        response = await apiClient.createInputSource(requestData);
+      }
+
+      // Reload the list to get updated data
+      await loadInputSources();
       setShowInputDialog(false);
       setEditingInput(null);
+      alert('✅ Input source saved successfully!');
     } catch (error) {
-      alert('Invalid JSON configuration');
+      console.error('Save input source error:', error);
+      if (error instanceof SyntaxError) {
+        alert('❌ Invalid JSON configuration');
+      } else {
+        alert('❌ Failed to save input source. Please try again.');
+      }
+    } finally {
+      setLoading(prev => ({ ...prev, saving: false }));
     }
   };
 
-  const handleDeleteInput = (id: number) => {
-    setInputSources(prev => prev.filter(s => s.id !== id));
-    setDeleteConfirm(null);
+  const handleDeleteInput = async (id: number) => {
+    setLoading(prev => ({ ...prev, saving: true }));
+    try {
+      await apiClient.deleteInputSource(id);
+      await loadInputSources();
+      setDeleteConfirm(null);
+      alert('✅ Input source deleted successfully!');
+    } catch (error) {
+      console.error('Delete input source error:', error);
+      alert('❌ Failed to delete input source. Please try again.');
+    } finally {
+      setLoading(prev => ({ ...prev, saving: false }));
+    }
   };
 
-  const toggleInputStatus = (id: number) => {
-    setInputSources(prev => prev.map(s => 
-      s.id === id ? { ...s, status: !s.status } : s
-    ));
+  const toggleInputStatus = async (id: number) => {
+    const source = inputSources.find(s => s.id === id);
+    if (!source) return;
+
+    try {
+      const requestData = {
+        is_active: !source.status
+      };
+      
+      await apiClient.updateInputSource(id, requestData);
+      await loadInputSources();
+    } catch (error) {
+      console.error('Toggle input status error:', error);
+      alert('❌ Failed to update input source status.');
+    }
   };
 
   // Output destination CRUD operations
@@ -335,42 +460,89 @@ export default function Settings() {
     setShowOutputDialog(true);
   };
 
-  const handleSaveOutput = () => {
+  const handleSaveOutput = async () => {
+    setLoading(prev => ({ ...prev, saving: true }));
     try {
       const config = JSON.parse(outputForm.configText);
-
-      const newDest: OutputDestination = {
-        id: editingOutput?.id || Date.now(),
-        platform: outputForm.platform,
-        label: outputForm.label,
-        accountId: outputForm.accountId,
-        token: outputForm.token,
-        status: editingOutput?.status ?? true,
-        config
-      };
-
-      if (editingOutput) {
-        setOutputDestinations(prev => prev.map(d => d.id === editingOutput.id ? newDest : d));
-      } else {
-        setOutputDestinations(prev => [...prev, newDest]);
-      }
       
+      // Prepare platform-specific credentials
+      const credentials: Record<string, string> = {};
+      if (outputForm.token) credentials.token = outputForm.token;
+      if (outputForm.apiKey) credentials.api_key = outputForm.apiKey;
+      if (outputForm.apiSecret) credentials.api_secret = outputForm.apiSecret;
+      if (outputForm.accessToken) credentials.access_token = outputForm.accessToken;
+      if (outputForm.accessTokenSecret) credentials.access_token_secret = outputForm.accessTokenSecret;
+
+      let response: ApiOutputDestination;
+      if (editingOutput) {
+        const updateData: Partial<ApiOutputDestination> = {
+          platform: outputForm.platform.toLowerCase() as 'telegram' | 'twitter' | 'discord' | 'whatsapp',
+          label: outputForm.label,
+          account_id: outputForm.accountId,
+          credentials,
+          config,
+          is_active: editingOutput.status
+        };
+        response = await apiClient.updateOutputDestination(editingOutput.id, updateData);
+      } else {
+        const requestData: CreateOutputDestinationRequest = {
+          platform: outputForm.platform.toLowerCase() as 'telegram' | 'twitter' | 'discord' | 'whatsapp',
+          label: outputForm.label,
+          account_id: outputForm.accountId,
+          credentials,
+          config,
+          is_active: true
+        };
+        response = await apiClient.createOutputDestination(requestData);
+      }
+
+      // Reload the list to get updated data
+      await loadOutputDestinations();
       setShowOutputDialog(false);
       setEditingOutput(null);
+      alert('✅ Output destination saved successfully!');
     } catch (error) {
-      alert('Invalid JSON configuration');
+      console.error('Save output destination error:', error);
+      if (error instanceof SyntaxError) {
+        alert('❌ Invalid JSON configuration');
+      } else {
+        alert('❌ Failed to save output destination. Please try again.');
+      }
+    } finally {
+      setLoading(prev => ({ ...prev, saving: false }));
     }
   };
 
-  const handleDeleteOutput = (id: number) => {
-    setOutputDestinations(prev => prev.filter(d => d.id !== id));
-    setDeleteConfirm(null);
+  const handleDeleteOutput = async (id: number) => {
+    setLoading(prev => ({ ...prev, saving: true }));
+    try {
+      await apiClient.deleteOutputDestination(id);
+      await loadOutputDestinations();
+      setDeleteConfirm(null);
+      alert('✅ Output destination deleted successfully!');
+    } catch (error) {
+      console.error('Delete output destination error:', error);
+      alert('❌ Failed to delete output destination. Please try again.');
+    } finally {
+      setLoading(prev => ({ ...prev, saving: false }));
+    }
   };
 
-  const toggleOutputStatus = (id: number) => {
-    setOutputDestinations(prev => prev.map(d => 
-      d.id === id ? { ...d, status: !d.status } : d
-    ));
+  const toggleOutputStatus = async (id: number) => {
+    const destination = outputDestinations.find(d => d.id === id);
+    if (!destination) return;
+
+    try {
+      const requestData = {
+        is_active: !destination.status
+      };
+      
+      await apiClient.updateOutputDestination(id, requestData);
+      await loadOutputDestinations();
+    } catch (error) {
+      console.error('Toggle output status error:', error);
+      alert('❌ Failed to update output destination status.');
+    }
   };
 
   return (
@@ -419,7 +591,19 @@ export default function Settings() {
               </div>
 
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {inputSources.map((source) => (
+                {loading.inputs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <span className="ml-2 text-slate-600">Loading input sources...</span>
+                  </div>
+                ) : inputSources.length === 0 ? (
+                  <div className="text-center py-8 text-slate-600">
+                    <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No input sources configured yet</p>
+                    <p className="text-sm">Add your first data source to get started</p>
+                  </div>
+                ) : (
+                  inputSources.map((source) => (
                   <div key={source.id} className="bg-white/50 rounded-xl border border-slate-200/50 p-4 hover:bg-white/70 transition-all">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
@@ -470,7 +654,8 @@ export default function Settings() {
                       </div>
                     </div>
                   </div>
-                ))}
+                ))
+                )}
               </div>
             </div>
           </div>
@@ -498,7 +683,19 @@ export default function Settings() {
               </div>
 
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {outputDestinations.map((dest) => (
+                {loading.outputs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                    <span className="ml-2 text-slate-600">Loading output destinations...</span>
+                  </div>
+                ) : outputDestinations.length === 0 ? (
+                  <div className="text-center py-8 text-slate-600">
+                    <Link className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No output destinations configured yet</p>
+                    <p className="text-sm">Add your first platform account to get started</p>
+                  </div>
+                ) : (
+                  outputDestinations.map((dest) => (
                   <div key={dest.id} className="bg-white/50 rounded-xl border border-slate-200/50 p-4 hover:bg-white/70 transition-all">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
@@ -541,7 +738,8 @@ export default function Settings() {
                       </Badge>
                     </div>
                   </div>
-                ))}
+                ))
+                )}
               </div>
             </div>
           </div>
@@ -882,9 +1080,13 @@ export default function Settings() {
               <Button variant="outline" onClick={() => setShowInputDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveInput}>
-                <Save className="w-4 h-4 mr-2" />
-                Save
+              <Button onClick={handleSaveInput} disabled={loading.saving}>
+                {loading.saving ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {loading.saving ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
@@ -1075,9 +1277,13 @@ export default function Settings() {
               <Button variant="outline" onClick={() => setShowOutputDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveOutput}>
-                <Save className="w-4 h-4 mr-2" />
-                Save
+              <Button onClick={handleSaveOutput} disabled={loading.saving}>
+                {loading.saving ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {loading.saving ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>

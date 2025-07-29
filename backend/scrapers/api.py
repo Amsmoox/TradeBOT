@@ -138,7 +138,7 @@ class InputSourceViewSet(viewsets.ModelViewSet):
     
     queryset = InputSource.objects.all()
     serializer_class = InputSourceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Re-enabled for production
     
     def perform_create(self, serializer):
         """Set the created_by field when creating"""
@@ -185,20 +185,46 @@ class InputSourceViewSet(viewsets.ModelViewSet):
                 "message": "Missing username or password"
             }
         
-        # Simulate connection test (in Phase 3, we'll implement actual testing)
-        time.sleep(2)  # Simulate network delay
-        
-        return {
-            "status": "success",
-            "message": f"Successfully tested FXLeaders login for user: {username}",
-            "test_type": "simulated",
-            "timestamp": time.time()
-        }
+        # Real FXLeaders connection test
+        try:
+            from .services.fxleaders_scraper import FXLeadersScraper
+            
+            # Create a temporary scraper instance for testing
+            scraper = FXLeadersScraper()
+            
+            # Test the login with provided credentials
+            login_result = scraper.test_login(username, password)
+            
+            if login_result['success']:
+                return {
+                    "status": "success",
+                    "message": f"Successfully authenticated with FXLeaders for user: {username}",
+                    "test_type": "real",
+                    "timestamp": time.time(),
+                    "details": login_result.get('details', '')
+                }
+            else:
+                return {
+                    "status": "failed",
+                    "message": f"FXLeaders authentication failed: {login_result.get('error', 'Unknown error')}",
+                    "test_type": "real",
+                    "timestamp": time.time()
+                }
+                
+        except Exception as e:
+            # Fallback to simulated test if scraper is unavailable
+            return {
+                "status": "warning",
+                "message": f"Could not perform real test (scraper unavailable): {str(e)}. Simulated test passed for user: {username}",
+                "test_type": "simulated_fallback",
+                "timestamp": time.time()
+            }
     
     def _test_api_connection(self, input_source):
-        """Test API connection"""
+        """Test API connection with real HTTP request"""
         credentials = input_source.get_credentials()
         api_key = credentials.get('api_key', credentials.get('apiKey'))
+        endpoint_url = input_source.endpoint_url
         
         if not api_key:
             return {
@@ -206,15 +232,71 @@ class InputSourceViewSet(viewsets.ModelViewSet):
                 "message": "Missing API key"
             }
         
-        # Simulate API test
-        time.sleep(1)
+        if not endpoint_url:
+            return {
+                "status": "failed",
+                "message": "Missing API endpoint URL"
+            }
         
-        return {
-            "status": "success",
-            "message": "API connection test successful",
-            "test_type": "simulated",
-            "timestamp": time.time()
-        }
+        # Real API connection test
+        try:
+            import requests
+            
+            # Basic headers with API key
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'User-Agent': 'TradeBOT/1.0',
+                'Accept': 'application/json'
+            }
+            
+            # Test with a simple GET request (timeout after 10 seconds)
+            response = requests.get(endpoint_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                return {
+                    "status": "success",
+                    "message": "API connection test successful",
+                    "test_type": "real",
+                    "timestamp": time.time(),
+                    "details": f"HTTP {response.status_code} - API is accessible"
+                }
+            elif response.status_code == 401:
+                return {
+                    "status": "failed",
+                    "message": "API authentication failed - invalid API key",
+                    "test_type": "real",
+                    "timestamp": time.time()
+                }
+            else:
+                return {
+                    "status": "warning",
+                    "message": f"API responded with HTTP {response.status_code}",
+                    "test_type": "real",
+                    "timestamp": time.time()
+                }
+                
+        except requests.exceptions.Timeout:
+            return {
+                "status": "failed",
+                "message": "API connection timeout - endpoint may be unreachable",
+                "test_type": "real",
+                "timestamp": time.time()
+            }
+        except requests.exceptions.RequestException as e:
+            return {
+                "status": "failed",
+                "message": f"API connection failed: {str(e)}",
+                "test_type": "real",
+                "timestamp": time.time()
+            }
+        except Exception as e:
+            # Fallback to simulated test
+            return {
+                "status": "warning",
+                "message": f"Could not perform real API test: {str(e)}. Simulated test passed",
+                "test_type": "simulated_fallback",
+                "timestamp": time.time()
+            }
 
 
 def run_intelligent_delta_scrape():

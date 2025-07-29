@@ -1,6 +1,7 @@
 
 from rest_framework import serializers
 from .models import OutputDestination, CredentialTestResult
+from scrapers.utils.encryption import credential_manager
 
 class SignalSerializer(serializers.Serializer):
     symbol = serializers.CharField(max_length=10)
@@ -26,14 +27,8 @@ class OutputDestinationSerializer(serializers.ModelSerializer):
     def get_credentials(self, obj):
         """Return decrypted credentials (masked for security)"""
         creds = obj.get_credentials()
-        # Mask sensitive fields for API response
-        masked_creds = {}
-        for key, value in creds.items():
-            if key.lower() in ['password', 'secret', 'token', 'key']:
-                masked_creds[key] = '***' if value else ''
-            else:
-                masked_creds[key] = value
-        return masked_creds
+        # Use the secure credential manager to mask sensitive fields
+        return credential_manager.mask_credentials(creds)
     
     def get_config(self, obj):
         """Return configuration"""

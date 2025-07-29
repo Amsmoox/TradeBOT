@@ -18,44 +18,64 @@ logger = logging.getLogger(__name__)
 
 class FXLeadersScraper(BaseScraper):
     """
-    Enhanced FX Leaders scraper with comprehensive logging and error handling
+    Enhanced FX Leaders scraper with dynamic credential management and comprehensive logging
     """
     
-    def __init__(self):
-        # Load credentials first and log their status
-        login_url = os.environ.get('FXLEADERS_LOGIN_URL')
-        signals_url = os.environ.get('FXLEADERS_SIGNALS_URL')
-        username = os.environ.get('FXLEADERS_USERNAME')
-        password = os.environ.get('FXLEADERS_PASSWORD')
+    def __init__(self, use_database_credentials=True):
+        """
+        Initialize FXLeaders scraper with optional database credential support
+        
+        Args:
+            use_database_credentials (bool): If True, tries to load from database first, 
+                                           then falls back to environment variables
+        """
+        self.driver = None
+        self.use_database_credentials = use_database_credentials
+        
+        # Try to load credentials from database first, then fallback to env vars
+        credentials = self._load_credentials()
+        
+        self.login_url = credentials.get('login_url')
+        self.signals_url = credentials.get('signals_url') 
+        self.username = credentials.get('username')
+        self.password = credentials.get('password')
+        
+        # Configuration options
+        self.config = credentials.get('config', {})
+        self.scrape_interval = int(self.config.get('scrape_interval', 300))
+        self.max_signals = int(self.config.get('max_signals_per_scrape', 50))
+        self.headless = self.config.get('chrome_headless', True)
         
         print(f"🔧 FXLeaders Scraper Configuration:")
-        print(f"   • Login URL: {'✅ SET' if login_url else '❌ NOT SET'}")
-        print(f"   • Signals URL: {'✅ SET' if signals_url else '❌ NOT SET'}")
-        print(f"   • Username: {'✅ SET' if username else '❌ NOT SET'}")
-        print(f"   • Password: {'✅ SET' if password else '❌ NOT SET'}")
+        print(f"   • Credential Source: {'Database' if self.use_database_credentials and self._has_database_credentials() else 'Environment Variables'}")
+        print(f"   • Login URL: {'✅ SET' if self.login_url else '❌ NOT SET'}")
+        print(f"   • Signals URL: {'✅ SET' if self.signals_url else '❌ NOT SET'}")
+        print(f"   • Username: {'✅ SET' if self.username else '❌ NOT SET'}")
+        print(f"   • Password: {'✅ SET' if self.password else '❌ NOT SET'}")
+        print(f"   • Scrape Interval: {self.scrape_interval}s")
+        print(f"   • Max Signals: {self.max_signals}")
+        print(f"   • Headless Mode: {self.headless}")
         
-        if not all([login_url, signals_url, username, password]):
+        if not all([self.login_url, self.signals_url, self.username, self.password]):
             missing = []
-            if not login_url: missing.append('FXLEADERS_LOGIN_URL')
-            if not signals_url: missing.append('FXLEADERS_SIGNALS_URL')
-            if not username: missing.append('FXLEADERS_USERNAME')
-            if not password: missing.append('FXLEADERS_PASSWORD')
+            if not self.login_url: missing.append('login_url')
+            if not self.signals_url: missing.append('signals_url')
+            if not self.username: missing.append('username')
+            if not self.password: missing.append('password')
             
-            print(f"❌ Missing environment variables: {', '.join(missing)}")
-            print(f"💡 Please check your .env file or environment configuration")
+            print(f"❌ Missing credentials: {', '.join(missing)}")
+            if self.use_database_credentials:
+                print(f"💡 Run: scraper.setup_database_credentials() to migrate from environment variables")
+            else:
+                print(f"💡 Please check your .env file or environment configuration")
         
         # Extract base URL from login URL
-        if login_url:
-            base_url = '/'.join(login_url.split('/')[:3])
+        if self.login_url:
+            base_url = '/'.join(self.login_url.split('/')[:3])
         else:
             base_url = 'https://www.fxleaders.com'
             
         super().__init__(base_url, source_name='fxleaders')
-        self.login_url = login_url
-        self.signals_url = signals_url
-        self.username = username
-        self.password = password
-        self.driver = None
         
         # Add realistic browser headers
         self.session.headers.update({
@@ -67,6 +87,257 @@ class FXLeadersScraper(BaseScraper):
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         })
+    
+    def _load_credentials(self):
+        """
+        Load credentials from database or environment variables
+        
+        Returns:
+            dict: Credentials and configuration
+        """
+        credentials = {}
+        
+        if self.use_database_credentials:
+            # Try to load from database first
+            try:
+                from ..models import InputSource
+                
+                # Look for active FXLeaders InputSource
+                fxleaders_sources = InputSource.objects.filter(
+                    source_type='trading_signals',
+                    method='scraping',
+                    is_active=True
+                ).filter(
+                    name__icontains='fxleaders'
+                )
+                
+                if fxleaders_sources.exists():
+                    source = fxleaders_sources.first()
+                    db_credentials = source.get_credentials()
+                    db_config = source.get_config()
+                    
+                    print(f"🗃️  Loading credentials from database (InputSource ID: {source.id})")
+                    
+                    credentials.update({
+                        'username': db_credentials.get('username'),
+                        'password': db_credentials.get('password'),
+                        'login_url': db_credentials.get('login_url'),
+                        'signals_url': db_credentials.get('signals_url'),
+                        'config': db_config
+                    })
+                    
+                    return credentials
+                    
+            except Exception as e:
+                print(f"⚠️  Could not load from database: {e}")
+        
+        # Fallback to environment variables
+        print(f"🔧 Loading credentials from environment variables")
+        credentials.update({
+            'username': os.environ.get('FXLEADERS_USERNAME'),
+            'password': os.environ.get('FXLEADERS_PASSWORD'),
+            'login_url': os.environ.get('FXLEADERS_LOGIN_URL'),
+            'signals_url': os.environ.get('FXLEADERS_SIGNALS_URL'),
+            'config': {}
+        })
+        
+        return credentials
+    
+    def _has_database_credentials(self):
+        """Check if database credentials are available"""
+        try:
+            from ..models import InputSource
+            return InputSource.objects.filter(
+                source_type='trading_signals',
+                method='scraping',
+                is_active=True,
+                name__icontains='fxleaders'
+            ).exists()
+        except:
+            return False
+    
+    def setup_database_credentials(self, force_update=False):
+        """
+        Migrate credentials from environment variables to database
+        
+        Args:
+            force_update (bool): Update existing database credentials
+            
+        Returns:
+            dict: Result with success status and details
+        """
+        try:
+            from ..models import InputSource
+            
+            # Get current environment credentials
+            env_credentials = {
+                'username': os.environ.get('FXLEADERS_USERNAME'),
+                'password': os.environ.get('FXLEADERS_PASSWORD'),
+                'login_url': os.environ.get('FXLEADERS_LOGIN_URL'),
+                'signals_url': os.environ.get('FXLEADERS_SIGNALS_URL')
+            }
+            
+            # Validate environment credentials
+            missing = [key for key, value in env_credentials.items() if not value]
+            if missing:
+                return {
+                    'success': False,
+                    'message': f'Missing environment variables: {missing}',
+                    'action': 'Set missing environment variables first'
+                }
+            
+            # Check if source already exists
+            existing_source = InputSource.objects.filter(
+                name='FXLeaders Production',
+                source_type='trading_signals'
+            ).first()
+            
+            if existing_source and not force_update:
+                return {
+                    'success': False,
+                    'message': 'FXLeaders source already exists in database',
+                    'action': 'Use force_update=True to overwrite existing credentials',
+                    'source_id': existing_source.id
+                }
+            
+            # Create or update source
+            if existing_source:
+                source = existing_source
+                action = 'Updated'
+            else:
+                source = InputSource()
+                source.name = 'FXLeaders Production'
+                source.source_type = 'trading_signals'
+                source.method = 'scraping'
+                action = 'Created'
+            
+            # Set URLs and credentials
+            source.endpoint_url = env_credentials['signals_url']
+            source.set_credentials({
+                'username': env_credentials['username'],
+                'password': env_credentials['password'],
+                'login_url': env_credentials['login_url'],
+                'signals_url': env_credentials['signals_url']
+            })
+            source.set_config({
+                'scrape_interval': '300',  # 5 minutes
+                'max_signals_per_scrape': '50',
+                'enable_delta_scraping': True,
+                'chrome_headless': True
+            })
+            source.is_active = True
+            source.save()
+            
+            return {
+                'success': True,
+                'message': f'{action} FXLeaders InputSource successfully',
+                'source_id': source.id,
+                'action': 'Credentials are now stored securely in database'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'Failed to setup database credentials: {str(e)}',
+                'action': 'Check database connection and permissions'
+            }
+    
+    def test_database_credentials(self):
+        """
+        Test connection using database credentials
+        
+        Returns:
+            dict: Test result with details
+        """
+        if not self._has_database_credentials():
+            return {
+                'success': False,
+                'message': 'No database credentials found',
+                'action': 'Run setup_database_credentials() first'
+            }
+        
+        # Reload credentials from database
+        credentials = self._load_credentials()
+        username = credentials.get('username')
+        password = credentials.get('password')
+        
+        if not username or not password:
+            return {
+                'success': False,
+                'message': 'Database credentials are incomplete',
+                'action': 'Check InputSource credentials in database'
+            }
+        
+        print(f"🧪 Testing database credentials for user: {username}")
+        return self.test_login(username, password)
+    
+    def get_credential_status(self):
+        """
+        Get detailed status of credential sources
+        
+        Returns:
+            dict: Status information for both database and environment credentials
+        """
+        status = {
+            'database': {
+                'available': False,
+                'source_id': None,
+                'credentials_complete': False
+            },
+            'environment': {
+                'available': False,
+                'credentials_complete': False
+            },
+            'current_source': 'none',
+            'recommendation': ''
+        }
+        
+        # Check database credentials
+        try:
+            from ..models import InputSource
+            fxleaders_sources = InputSource.objects.filter(
+                source_type='trading_signals',
+                method='scraping',
+                is_active=True,
+                name__icontains='fxleaders'
+            )
+            
+            if fxleaders_sources.exists():
+                source = fxleaders_sources.first()
+                credentials = source.get_credentials()
+                
+                status['database']['available'] = True
+                status['database']['source_id'] = source.id
+                status['database']['credentials_complete'] = all([
+                    credentials.get('username'),
+                    credentials.get('password'),
+                    credentials.get('login_url'),
+                    credentials.get('signals_url')
+                ])
+                
+        except Exception as e:
+            status['database']['error'] = str(e)
+        
+        # Check environment credentials
+        env_vars = ['FXLEADERS_USERNAME', 'FXLEADERS_PASSWORD', 
+                   'FXLEADERS_LOGIN_URL', 'FXLEADERS_SIGNALS_URL']
+        env_values = [os.environ.get(var) for var in env_vars]
+        
+        status['environment']['available'] = any(env_values)
+        status['environment']['credentials_complete'] = all(env_values)
+        
+        # Determine current source and recommendation
+        if status['database']['credentials_complete']:
+            status['current_source'] = 'database'
+            status['recommendation'] = 'Using secure database credentials ✅'
+        elif status['environment']['credentials_complete']:
+            status['current_source'] = 'environment'
+            status['recommendation'] = 'Consider migrating to database credentials for better security'
+        else:
+            status['current_source'] = 'none'
+            status['recommendation'] = 'Set up credentials via environment variables or database'
+        
+        return status
         
     def authenticate(self):
         """
@@ -89,7 +360,14 @@ class FXLeadersScraper(BaseScraper):
             options.add_argument("--disable-gpu")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--headless")  # Run in headless mode (no visual browser)
+            
+            # Use headless mode based on configuration
+            if self.headless:
+                options.add_argument("--headless")  # Run in headless mode (no visual browser)
+                print(f"   • Running in headless mode")
+            else:
+                print(f"   • Running with visible browser (debugging mode)")
+                
             options.add_argument("--window-size=1366,768")  # Smaller window size
             options.add_argument("--disable-extensions")
             
@@ -646,3 +924,62 @@ class FXLeadersScraper(BaseScraper):
         
         print(f"✅ Delta-scrape complete: {result['message']}")
         return result
+    
+    def test_login(self, username, password):
+        """
+        Test login credentials without performing a full scrape
+        
+        Args:
+            username (str): FXLeaders username
+            password (str): FXLeaders password
+            
+        Returns:
+            dict: Test result with success status and details
+        """
+        print(f"🧪 Testing FXLeaders login credentials for user: {username}")
+        
+        # Temporarily override credentials for testing
+        original_username = self.username
+        original_password = self.password
+        self.username = username
+        self.password = password
+        
+        try:
+            # Attempt authentication
+            auth_result = self.authenticate()
+            
+            if auth_result:
+                # If authentication succeeded, clean up and return success
+                if hasattr(self, 'driver') and self.driver:
+                    self.driver.quit()
+                
+                return {
+                    'success': True,
+                    'details': f'Successfully authenticated with FXLeaders for user: {username}',
+                    'timestamp': time.time()
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'Authentication failed - invalid credentials or website issue',
+                    'timestamp': time.time()
+                }
+                
+        except Exception as e:
+            # Clean up driver if it exists
+            if hasattr(self, 'driver') and self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+            
+            return {
+                'success': False,
+                'error': f'Login test failed with exception: {str(e)}',
+                'timestamp': time.time()
+            }
+            
+        finally:
+            # Restore original credentials
+            self.username = original_username
+            self.password = original_password

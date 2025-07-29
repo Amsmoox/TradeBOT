@@ -1,5 +1,262 @@
-import { apiRequest } from "./queryClient";
+// Authentication interfaces
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
 
+export interface AuthTokens {
+  access: string;
+  refresh: string;
+}
+
+// API client for TradeBOT backend credential management with JWT authentication
+class ApiClient {
+  private baseURL = 'http://127.0.0.1:8000';
+  private accessToken: string | null = null;
+  private refreshToken: string | null = null;
+
+  constructor() {
+    // Load tokens from localStorage on initialization
+    this.loadTokensFromStorage();
+  }
+
+  private saveTokensToStorage(tokens: AuthTokens) {
+    this.accessToken = tokens.access;
+    this.refreshToken = tokens.refresh;
+    localStorage.setItem('access_token', tokens.access);
+    localStorage.setItem('refresh_token', tokens.refresh);
+  }
+
+  private loadTokensFromStorage() {
+    this.accessToken = localStorage.getItem('access_token');
+    this.refreshToken = localStorage.getItem('refresh_token');
+  }
+
+  private clearTokens() {
+    this.accessToken = null;
+    this.refreshToken = null;
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  }
+
+  // Authentication methods
+  async login(credentials: LoginCredentials): Promise<AuthTokens> {
+    const response = await fetch(`${this.baseURL}/api/auth/token/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Login failed');
+    }
+
+    const tokens = await response.json();
+    this.saveTokensToStorage(tokens);
+    return tokens;
+  }
+
+  async refreshAccessToken(): Promise<string> {
+    if (!this.refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    const response = await fetch(`${this.baseURL}/api/auth/token/refresh/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh: this.refreshToken }),
+    });
+
+    if (!response.ok) {
+      this.clearTokens();
+      throw new Error('Token refresh failed');
+    }
+
+    const data = await response.json();
+    this.accessToken = data.access;
+    localStorage.setItem('access_token', data.access);
+    return data.access;
+  }
+
+  logout() {
+    this.clearTokens();
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.accessToken;
+  }
+
+  // Helper method for making authenticated requests
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${this.baseURL}${endpoint}`;
+    
+    // Prepare headers with authentication
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    // Add auth header if we have a token
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+
+    let response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    // If we get a 401 and have a refresh token, try to refresh
+    if (response.status === 401 && this.refreshToken) {
+      try {
+        await this.refreshAccessToken();
+        // Retry the request with the new token
+        headers['Authorization'] = `Bearer ${this.accessToken}`;
+        response = await fetch(url, {
+          ...options,
+          headers,
+        });
+      } catch (refreshError) {
+        // Refresh failed, clear tokens and throw error
+        this.clearTokens();
+        throw new Error('Authentication failed');
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Input Sources (Scrapers) endpoints
+  async getInputSources(): Promise<InputSource[]> {
+    return this.request<InputSource[]>('/api/input-sources/');
+  }
+
+  async createInputSource(data: CreateInputSourceRequest): Promise<InputSource> {
+    return this.request<InputSource>('/api/input-sources/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateInputSource(id: number, data: Partial<InputSource>): Promise<InputSource> {
+    return this.request<InputSource>(`/api/input-sources/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteInputSource(id: number): Promise<void> {
+    return this.request<void>(`/api/input-sources/${id}/`, {
+      method: 'DELETE',
+    });
+  }
+
+  async testInputSourceConnection(id: number): Promise<ConnectionTestResult> {
+    return this.request<ConnectionTestResult>(`/api/input-sources/${id}/test_connection/`, {
+      method: 'POST',
+    });
+  }
+
+  // Output Destinations (Messaging) endpoints
+  async getOutputDestinations(): Promise<OutputDestination[]> {
+    return this.request<OutputDestination[]>('/api/messaging/output-destinations/');
+  }
+
+  async createOutputDestination(data: CreateOutputDestinationRequest): Promise<OutputDestination> {
+    return this.request<OutputDestination>('/api/messaging/output-destinations/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateOutputDestination(id: number, data: Partial<OutputDestination>): Promise<OutputDestination> {
+    return this.request<OutputDestination>(`/api/messaging/output-destinations/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteOutputDestination(id: number): Promise<void> {
+    return this.request<void>(`/api/messaging/output-destinations/${id}/`, {
+      method: 'DELETE',
+    });
+  }
+
+  async testOutputDestinationConnection(id: number): Promise<ConnectionTestResult> {
+    return this.request<ConnectionTestResult>(`/api/messaging/output-destinations/${id}/test_connection/`, {
+      method: 'POST',
+    });
+  }
+}
+
+// Type definitions
+export interface InputSource {
+  id: number;
+  name: string;
+  source_type: 'economic_calendar' | 'trading_signals' | 'market_news';
+  method: 'api' | 'scraping';
+  endpoint_url: string;
+  credentials: Record<string, string>;
+  config: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OutputDestination {
+  id: number;
+  platform: 'telegram' | 'twitter' | 'discord' | 'whatsapp';
+  label: string;
+  account_id: string;
+  credentials: Record<string, string>;
+  config: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectionTestResult {
+  status: 'success' | 'failed' | 'not_supported';
+  message: string;
+  details?: Record<string, any>;
+}
+
+export interface CreateInputSourceRequest {
+  name: string;
+  source_type: 'economic_calendar' | 'trading_signals' | 'market_news';
+  method: 'api' | 'scraping';
+  endpoint_url: string;
+  credentials: Record<string, string>;
+  config?: Record<string, any>;
+  is_active?: boolean;
+}
+
+export interface UpdateInputSourceRequest extends Partial<CreateInputSourceRequest> {}
+
+export interface CreateOutputDestinationRequest {
+  platform: 'telegram' | 'twitter' | 'discord' | 'whatsapp';
+  label: string;
+  account_id: string;
+  credentials: Record<string, string>;
+  config?: Record<string, any>;
+  is_active?: boolean;
+}
+
+export interface UpdateOutputDestinationRequest extends Partial<CreateOutputDestinationRequest> {}
+
+// Export singleton instance
+export const apiClient = new ApiClient();
+
+// Legacy content generation interface (keeping for backward compatibility)
 export interface ContentGenerationRequest {
   type: 'economic' | 'market' | 'signal' | 'custom';
   data?: any;

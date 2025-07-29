@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 import json
 import base64
+from scrapers.utils.encryption import credential_manager
 
 # Simple encryption utility for credentials
 class SimpleEncryption:
@@ -53,19 +54,12 @@ class OutputDestination(models.Model):
     config_json = models.TextField(default='{}', help_text="Platform-specific configuration as JSON")
     
     def set_credentials(self, credentials_dict):
-        """Encrypt and store platform credentials"""
-        credentials_json = json.dumps(credentials_dict)
-        self.encrypted_credentials = SimpleEncryption.encrypt_data(credentials_json)
+        """Encrypt and store platform credentials using Fernet encryption"""
+        self.encrypted_credentials = credential_manager.encrypt_credentials(credentials_dict)
     
     def get_credentials(self):
-        """Decrypt and return platform credentials"""
-        if not self.encrypted_credentials:
-            return {}
-        try:
-            decrypted_json = SimpleEncryption.decrypt_data(self.encrypted_credentials)
-            return json.loads(decrypted_json) if decrypted_json else {}
-        except json.JSONDecodeError:
-            return {}
+        """Decrypt and return platform credentials using Fernet encryption"""
+        return credential_manager.decrypt_credentials(self.encrypted_credentials)
     
     def get_config(self):
         """Return configuration as dict"""

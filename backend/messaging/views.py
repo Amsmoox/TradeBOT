@@ -76,7 +76,7 @@ class OutputDestinationViewSet(viewsets.ModelViewSet):
     
     queryset = OutputDestination.objects.all()
     serializer_class = OutputDestinationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Re-enabled for production
     
     def perform_create(self, serializer):
         """Set the created_by field when creating"""
@@ -124,15 +124,91 @@ class OutputDestinationViewSet(viewsets.ModelViewSet):
                 "message": "Missing Telegram bot token"
             }
         
-        # Simulate bot token validation
-        time.sleep(1.5)
-        
-        return {
-            "status": "success",
-            "message": f"Telegram bot connection successful for {destination.account_id}",
-            "test_type": "simulated",
-            "timestamp": time.time()
-        }
+        # Real Telegram bot validation
+        try:
+            import requests
+            
+            # Test the bot token by calling Telegram's getMe API
+            telegram_api_url = f"https://api.telegram.org/bot{token}/getMe"
+            
+            response = requests.get(telegram_api_url, timeout=10)
+            data = response.json()
+            
+            if response.status_code == 200 and data.get('ok'):
+                bot_info = data.get('result', {})
+                bot_username = bot_info.get('username', 'Unknown')
+                
+                # If chat_id is provided, test if bot can access the chat
+                chat_id = credentials.get('chat_id')
+                if chat_id:
+                    try:
+                        chat_api_url = f"https://api.telegram.org/bot{token}/getChat"
+                        chat_response = requests.get(chat_api_url, params={'chat_id': chat_id}, timeout=10)
+                        chat_data = chat_response.json()
+                        
+                        if chat_response.status_code == 200 and chat_data.get('ok'):
+                            chat_title = chat_data.get('result', {}).get('title', chat_id)
+                            return {
+                                "status": "success",
+                                "message": f"Telegram bot '{bot_username}' successfully connected to chat '{chat_title}'",
+                                "test_type": "real",
+                                "timestamp": time.time(),
+                                "details": f"Bot ID: {bot_info.get('id')}"
+                            }
+                        else:
+                            return {
+                                "status": "warning",
+                                "message": f"Bot '{bot_username}' is valid but cannot access chat {chat_id}",
+                                "test_type": "real",
+                                "timestamp": time.time()
+                            }
+                    except:
+                        # Chat test failed but bot is valid
+                        return {
+                            "status": "warning",
+                            "message": f"Bot '{bot_username}' is valid but chat access test failed",
+                            "test_type": "real",
+                            "timestamp": time.time()
+                        }
+                else:
+                    return {
+                        "status": "success",
+                        "message": f"Telegram bot '{bot_username}' is valid and active",
+                        "test_type": "real",
+                        "timestamp": time.time(),
+                        "details": f"Bot ID: {bot_info.get('id')}"
+                    }
+            else:
+                error_description = data.get('description', 'Invalid bot token')
+                return {
+                    "status": "failed",
+                    "message": f"Telegram API error: {error_description}",
+                    "test_type": "real",
+                    "timestamp": time.time()
+                }
+                
+        except requests.exceptions.Timeout:
+            return {
+                "status": "failed",
+                "message": "Telegram API timeout - network connection issue",
+                "test_type": "real",
+                "timestamp": time.time()
+            }
+        except requests.exceptions.RequestException as e:
+            return {
+                "status": "failed",
+                "message": f"Telegram API connection failed: {str(e)}",
+                "test_type": "real",
+                "timestamp": time.time()
+            }
+        except Exception as e:
+            # Fallback to simulated test
+            return {
+                "status": "warning",
+                "message": f"Could not perform real test: {str(e)}. Token format appears valid",
+                "test_type": "simulated_fallback",
+                "timestamp": time.time()
+            }
     
     def _test_twitter_connection(self, destination):
         """Test Twitter API connection"""
@@ -184,7 +260,7 @@ class CredentialTestResultViewSet(viewsets.ReadOnlyModelViewSet):
     
     queryset = CredentialTestResult.objects.all()
     serializer_class = CredentialTestResultSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Re-enabled for production
     
     def get_queryset(self):
         """Filter results for the current user"""
