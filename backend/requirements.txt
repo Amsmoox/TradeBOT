@@ -1,53 +1,6 @@
 annotated-types==0.7.0
 anyio==4.9.0
 asgiref==3.8.1
-beautifulsoup4==4.12.3
-blinker==1.9.0
-certifi==2025.4.26
-charset-normalizer==3.4.2
-click==8.1.8
-Django==5.2
-django-environ==0.12.0
-<<<<<<< Updated upstream
-fastapi>=0.95,<1.0
-=======
-fastapi
->>>>>>> Stashed changes
-Flask==3.1.0
-idna==3.10
-itsdangerous==2.2.0
-Jinja2==3.1.6
-MarkupSafe==3.0.2
-<<<<<<< Updated upstream
-pydantic>=2.11,<3.0
-pydantic_core==2.33.2
-python-dotenv==1.1.0
-requests==2.32.3
-selenium>=4.9,<5.0
-=======
-pydantic
-pydantic_core
-python-dotenv==1.1.0
-requests==2.32.3
-selenium
->>>>>>> Stashed changes
-sniffio==1.3.1
-sqlparse==0.5.3
-starlette==0.46.2
-typing-inspection==0.4.0
-<<<<<<< Updated upstream
-typing_extensions>=4.12,<5.0
-=======
-typing_extensions
->>>>>>> Stashed changes
-urllib3==2.4.0
-webdriver-manager==4.0.1
-Werkzeug==3.1.3
-python-telegram-bot==20.3
-psycopg2-binary==2.9.10amqp==5.3.1
-annotated-types==0.7.0
-anyio==4.9.0
-asgiref==3.8.1
 attrs==25.3.0
 beautifulsoup4==4.12.3
 billiard==4.2.1
@@ -60,7 +13,7 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1
 click-repl==0.3.0
 cron-descriptor==1.4.5
-Django==4.2.23
+Django
 django-celery-beat==2.5.0
 django-environ==0.12.0
 django-timezone-field==7.1
@@ -78,6 +31,7 @@ MarkupSafe==3.0.2
 outcome==1.3.0.post0
 packaging==25.0
 prompt_toolkit==3.0.51
+psycopg2-binary==2.9.10
 psycopg==3.2.9
 pydantic==2.11.7
 pydantic_core==2.33.2
@@ -87,7 +41,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
 python-telegram-bot==20.3
 pytz==2025.2
-redis==5.0.1
+redis==4.5.4
 requests==2.32.3
 selenium==4.33.0
 six==1.17.0

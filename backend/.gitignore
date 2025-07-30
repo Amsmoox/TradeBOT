@@ -38,3 +38,6 @@ package-lock.json
 **/migrations/*.py
 **/migrations/*.pyc
 !**/migrations/__init__.py
+
+
+venv/

@@ -41,3 +41,6 @@ package-lock.json
 
 # Ignore all PDF files
 *.pdf
+
+
+venv/
