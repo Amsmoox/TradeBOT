@@ -1,4 +1,5 @@
 import { apiRequest } from "./queryClient";
+import { buildApiUrl } from './config';
 
 export interface ContentGenerationRequest {
   type: 'economic' | 'market' | 'signal' | 'custom';
@@ -91,5 +92,88 @@ export const api = {
       message: `Content posted to ${platforms.join(', ')}`, 
       results: platforms.map(p => ({ platform: p, status: 'success', posted_at: new Date() }))
     };
+  },
+
+  // Forex Signals API
+  getForexSignals: async (): Promise<any[]> => {
+    try {
+      const response = await fetch(buildApiUrl('/api/forex-signals/'), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data.results || [];
+    } catch (error) {
+      console.error('Error fetching forex signals:', error);
+      throw error;
+    }
+  },
+
+  getLatestForexSignals: async (): Promise<any[]> => {
+    try {
+      const response = await fetch(buildApiUrl('/api/forex-signals/latest/'), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching latest forex signals:', error);
+      throw error;
+    }
+  },
+
+  triggerDeltaScrape: async (): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl('/api/forex-signals/trigger_delta_scrape/'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ async: true }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error triggering delta scrape:', error);
+      throw error;
+    }
+  },
+
+  getScrapingStatus: async (): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl('/api/forex-signals/scraping_status/'), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching scraping status:', error);
+      throw error;
+    }
   },
 };

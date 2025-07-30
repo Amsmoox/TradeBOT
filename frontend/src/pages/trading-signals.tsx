@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Zap, Settings, Plus, Eye, Edit, ExternalLink, TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
+import { Zap, Settings, Plus, Eye, Edit, ExternalLink, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 export default function TradingSignals() {
   const [selectedTab, setSelectedTab] = useState("signals");
@@ -22,78 +23,57 @@ export default function TradingSignals() {
 
   interface TradingSignal {
     id: number;
-    symbol: string;
-    direction: string;
+    instrument: string;
+    action: string;
     entry_price: string;
     stop_loss: string;
     take_profit: string;
-    source: string;
-    confidence: number;
+    status_signal: string;
+    scrape_date: string;
+    source_url: string;
     status: string;
-    created_at: string;
-    description: string;
   }
 
-  // Mock data for development/testing
-  const mockSignals: TradingSignal[] = [
-    {
-      id: 1,
-      symbol: "EUR/USD",
-      direction: "BUY",
-      entry_price: "1.0850",
-      stop_loss: "1.0800",
-      take_profit: "1.0920",
-      source: "FXLeaders",
-      confidence: 85,
-      status: "ACTIVE",
-      created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
-      description: "Strong bullish momentum with RSI oversold conditions"
-    },
-    {
-      id: 2,
-      symbol: "GBP/JPY",
-      direction: "SELL",
-      entry_price: "185.20",
-      stop_loss: "186.50",
-      take_profit: "183.00",
-      source: "FXLeaders",
-      confidence: 72,
-      status: "ACTIVE",
-      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-      description: "Bearish reversal pattern confirmed, targeting support levels"
-    },
-    {
-      id: 3,
-      symbol: "XAU/USD",
-      direction: "BUY",
-      entry_price: "2015.50",
-      stop_loss: "2005.00",
-      take_profit: "2035.00",
-      source: "FXLeaders",
-      confidence: 90,
-      status: "CLOSED",
-      created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), // 6 hours ago
-      description: "Gold showing strong support at key level, inflation concerns driving demand"
-    }
-  ];
-
-  const { data: signals, isLoading, error } = useQuery<TradingSignal[]>({
-    queryKey: ['/api/trading-signals'],
-    queryFn: () => {
-      // Simulate API call - in production this would be a real API call
-      return new Promise<TradingSignal[]>((resolve) => {
-        setTimeout(() => resolve(mockSignals), 1000);
-      });
-    },
+  // Real API queries
+  const { data: signals, isLoading, error, refetch } = useQuery<TradingSignal[]>({
+    queryKey: ['forex-signals'],
+    queryFn: api.getForexSignals,
     staleTime: 30 * 1000, // 30 seconds
     refetchInterval: 60 * 1000, // Refetch every minute
   });
 
-  const { data: recentSignals } = useQuery<TradingSignal[]>({
-    queryKey: ['/api/trading-signals/recent'],
-    queryFn: () => {
-      // Return last 5 signals
-      return Promise.resolve(mockSignals.slice(0, 3));
+  const { data: latestSignals } = useQuery<TradingSignal[]>({
+    queryKey: ['forex-signals-latest'],
+    queryFn: api.getLatestForexSignals,
+    staleTime: 30 * 1000,
+  });
+
+  const { data: scrapingStatus } = useQuery({
+    queryKey: ['scraping-status'],
+    queryFn: api.getScrapingStatus,
+    staleTime: 60 * 1000, // 1 minute
+  });
+
+  // Mutation for triggering delta scrape
+  const triggerScrapeMutation = useMutation({
+    mutationFn: api.triggerDeltaScrape,
+    onSuccess: (data) => {
+      toast({
+        title: "Scraping Triggered",
+        description: data.message || "Delta scraping has been initiated successfully.",
+      });
+      // Refetch signals after a short delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['forex-signals'] });
+        queryClient.invalidateQueries({ queryKey: ['forex-signals-latest'] });
+      }, 2000);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Scraping Failed",
+        description: error.message || "Failed to trigger delta scraping.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -124,6 +104,18 @@ export default function TradingSignals() {
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  };
+
+  const handleTriggerScrape = () => {
+    triggerScrapeMutation.mutate();
+  };
+
+  const handleRefreshSignals = () => {
+    refetch();
+    toast({
+      title: "Refreshing Signals",
+      description: "Fetching latest trading signals...",
+    });
   };
 
   const SourceConfiguration = () => {
@@ -525,13 +517,31 @@ Source: {source}
                 <p className="text-sm text-slate-600 mt-1">Automated signal detection and distribution</p>
               </div>
             </div>
-            <Button 
-              className="bg-purple-600 hover:bg-purple-700"
-              onClick={() => setIsAddSourceModalOpen(true)}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Signal Source
-            </Button>
+            <div className="flex items-center space-x-3">
+              <Button 
+                variant="outline"
+                onClick={handleRefreshSignals}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Button 
+                onClick={handleTriggerScrape}
+                disabled={triggerScrapeMutation.isPending}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                {triggerScrapeMutation.isPending ? 'Scraping...' : 'Trigger Scrape'}
+              </Button>
+              <Button 
+                className="bg-purple-600 hover:bg-purple-700"
+                onClick={() => setIsAddSourceModalOpen(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Signal Source
+              </Button>
+            </div>
           </div>
         </header>
 
@@ -545,6 +555,53 @@ Source: {source}
             </TabsList>
 
             <TabsContent value="signals" className="space-y-4">
+              {/* Scraping Status */}
+              {scrapingStatus && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Zap className="w-5 h-5 text-purple-600" />
+                      <span>Scraping Status</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {scrapingStatus.recent_activity?.signals_last_24h || 0}
+                        </div>
+                        <div className="text-sm text-slate-600">Signals (24h)</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-green-600">
+                          {scrapingStatus.recent_activity?.total_signals || 0}
+                        </div>
+                        <div className="text-sm text-slate-600">Total Signals</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-purple-600">
+                          {scrapingStatus.watermark?.consecutive_no_changes || 0}
+                        </div>
+                        <div className="text-sm text-slate-600">No Changes</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-orange-600">
+                          {scrapingStatus.celery_available ? 'Active' : 'Inactive'}
+                        </div>
+                        <div className="text-sm text-slate-600">Background Tasks</div>
+                      </div>
+                    </div>
+                    {scrapingStatus.watermark && (
+                      <div className="mt-4 pt-4 border-t border-slate-200">
+                        <p className="text-sm text-slate-600">
+                          Last scrape: {formatTimeAgo(scrapingStatus.watermark.updated_at)}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Loading State */}
               {isLoading && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -572,7 +629,7 @@ Source: {source}
                   <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-slate-900 mb-2">Failed to Load Signals</h3>
                   <p className="text-slate-600 mb-4">Unable to fetch trading signals. Please check your connection and try again.</p>
-                  <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/trading-signals'] })}>
+                  <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['forex-signals'] })}>
                     Retry
                   </Button>
                 </div>
@@ -587,55 +644,55 @@ Source: {source}
                         <CardContent className="p-4">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center space-x-2">
-                              {getSignalIcon(signal.direction)}
-                              <span className="font-semibold text-slate-900">{signal.symbol}</span>
+                              {getSignalIcon(signal.action)}
+                              <span className="font-semibold text-slate-900">{signal.instrument}</span>
                             </div>
-                            <Badge className={getSignalColor(signal.direction)}>
-                              {signal.direction?.toUpperCase()}
+                            <Badge className={getSignalColor(signal.action)}>
+                              {signal.action?.toUpperCase()}
                             </Badge>
                           </div>
                           
                           <div className="space-y-2 text-sm">
-                            {signal.entry_price && (
+                            {signal.entry_price && signal.entry_price !== 'N/A' && (
                               <div className="flex justify-between">
                                 <span className="text-slate-600">Entry:</span>
                                 <span className="font-medium text-slate-900">{signal.entry_price}</span>
                               </div>
                             )}
-                            {signal.take_profit && (
+                            {signal.take_profit && signal.take_profit !== 'N/A' && (
                               <div className="flex justify-between">
                                 <span className="text-slate-600">Take Profit:</span>
                                 <span className="font-medium text-green-600">{signal.take_profit}</span>
                               </div>
                             )}
-                            {signal.stop_loss && (
+                            {signal.stop_loss && signal.stop_loss !== 'N/A' && (
                               <div className="flex justify-between">
                                 <span className="text-slate-600">Stop Loss:</span>
                                 <span className="font-medium text-red-600">{signal.stop_loss}</span>
                               </div>
                             )}
-                            {signal.confidence && (
+                            {signal.status_signal && (
                               <div className="flex justify-between">
-                                <span className="text-slate-600">Confidence:</span>
-                                <span className="font-medium text-blue-600">{signal.confidence}%</span>
+                                <span className="text-slate-600">Status:</span>
+                                <span className="font-medium text-blue-600">{signal.status_signal}</span>
                               </div>
                             )}
                           </div>
 
-                          {signal.description && (
+                          {signal.scrape_date && (
                             <div className="mt-3 pt-2 border-t border-slate-200">
-                              <p className="text-xs text-slate-600">{signal.description}</p>
+                              <p className="text-xs text-slate-600">Scraped: {formatTimeAgo(signal.scrape_date)}</p>
                             </div>
                           )}
 
                           <div className="mt-4 pt-3 border-t border-slate-200">
                             <div className="flex items-center justify-between text-xs text-slate-500">
-                              <span>{signal.source}</span>
-                              <span>{formatTimeAgo(signal.created_at)}</span>
+                              <span>FXLeaders</span>
+                              <span>{formatTimeAgo(signal.scrape_date)}</span>
                             </div>
                             <div className="flex items-center justify-between mt-2">
-                              <Badge variant="outline" className={signal.status === 'CLOSED' ? 'bg-gray-50 text-gray-700' : signal.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}>
-                                {signal.status}
+                              <Badge variant="outline" className={signal.status_signal === 'Closed' ? 'bg-gray-50 text-gray-700' : signal.status_signal === 'Active' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}>
+                                {signal.status_signal}
                               </Badge>
                               <div className="flex space-x-1">
                                 <Button variant="ghost" size="sm">
@@ -683,7 +740,7 @@ Source: {source}
                         <div className="text-sm text-slate-600">Avg Risk/Reward</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600">156</div>
+                        <div className="text-2xl font-bold text-purple-600">{scrapingStatus?.recent_activity?.signals_last_24h || 0}</div>
                         <div className="text-sm text-slate-600">Signals This Week</div>
                       </div>
                     </div>
@@ -713,26 +770,26 @@ Source: {source}
                         <div key={signal.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
                           <div className="flex-1">
                             <div className="flex items-center space-x-3">
-                              {getSignalIcon(signal.direction)}
-                              <span className="font-medium text-slate-900">{signal.symbol}</span>
-                              <Badge className={getSignalColor(signal.direction)}>
-                                {signal.direction?.toUpperCase()}
+                              {getSignalIcon(signal.action)}
+                              <span className="font-medium text-slate-900">{signal.instrument}</span>
+                              <Badge className={getSignalColor(signal.action)}>
+                                {signal.action?.toUpperCase()}
                               </Badge>
-                              <span className="text-sm text-slate-500">from {signal.source}</span>
+                              <span className="text-sm text-slate-500">from FXLeaders</span>
                             </div>
                             <div className="mt-2 text-sm text-slate-600">
-                              <span className="mr-4">Entry: {signal.entry_price || 'N/A'}</span>
-                              <span className="mr-4">Target: {signal.take_profit || 'N/A'}</span>
-                              <span>Stop: {signal.stop_loss || 'N/A'}</span>
+                              <span className="mr-4">Entry: {signal.entry_price !== 'N/A' ? signal.entry_price : 'N/A'}</span>
+                              <span className="mr-4">Target: {signal.take_profit !== 'N/A' ? signal.take_profit : 'N/A'}</span>
+                              <span>Stop: {signal.stop_loss !== 'N/A' ? signal.stop_loss : 'N/A'}</span>
                             </div>
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-medium text-slate-900">
-                              {formatTimeAgo(signal.created_at)}
+                              {formatTimeAgo(signal.scrape_date)}
                             </p>
                             <div className="flex items-center space-x-2 mt-2">
-                              <Badge variant="outline" className={signal.status === 'CLOSED' ? 'bg-gray-50 text-gray-700' : 'bg-green-50 text-green-700'}>
-                                {signal.status === 'CLOSED' ? 'Posted' : 'Pending'}
+                              <Badge variant="outline" className={signal.status_signal === 'Closed' ? 'bg-gray-50 text-gray-700' : 'bg-green-50 text-green-700'}>
+                                {signal.status_signal === 'Closed' ? 'Posted' : 'Active'}
                               </Badge>
                               <Button variant="ghost" size="sm">
                                 <Eye className="w-4 h-4" />
