@@ -18,6 +18,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +128,10 @@ class Command(BaseCommand):
             options.add_argument("--headless")  # Run in headless mode
             options.add_argument("--window-size=1920,1080")  # Set larger window size
             
-            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/bin/chromedriver')
-            driver = webdriver.Chrome(service=ChromeService(chromedriver_path), options=options)
+            # Use system ChromeDriver installed via Homebrew
+            chromedriver_path = "/opt/homebrew/bin/chromedriver"
+            service = ChromeService(chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=options)
             
             # Navigate to calendar page
             driver.get(url)
