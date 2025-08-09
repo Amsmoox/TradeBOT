@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
+from django.db import transaction
 
 from ..models import ScrapedData
 
@@ -23,17 +24,50 @@ class FXLeadersScraper(BaseScraper):
     """
     
     def __init__(self):
-        # Load credentials first and log their status
-        login_url = os.environ.get('FXLEADERS_LOGIN_URL')
-        signals_url = os.environ.get('FXLEADERS_SIGNALS_URL')
-        username = os.environ.get('FXLEADERS_USERNAME')
-        password = os.environ.get('FXLEADERS_PASSWORD')
+        # Try to get credentials from database first, then fall back to environment variables
+        from ..models import ScraperCredentials
         
-        print(f"🔧 FXLeaders Scraper Configuration:")
-        print(f"   • Login URL: {'✅ SET' if login_url else '❌ NOT SET'}")
-        print(f"   • Signals URL: {'✅ SET' if signals_url else '❌ NOT SET'}")
-        print(f"   • Username: {'✅ SET' if username else '❌ NOT SET'}")
-        print(f"   • Password: {'✅ SET' if password else '❌ NOT SET'}")
+        # Get FX Leaders credentials from database
+        try:
+            credentials = ScraperCredentials.objects.filter(
+                scraper_name='fxleaders',
+                is_active=True
+            ).first()
+            
+            if credentials:
+                login_url = credentials.login_url
+                signals_url = credentials.signals_url
+                username = credentials.username
+                password = credentials.password
+                print(f"🔧 FXLeaders Scraper Configuration (from database):")
+                print(f"   • Login URL: {'✅ SET' if login_url else '❌ NOT SET'}")
+                print(f"   • Signals URL: {'✅ SET' if signals_url else '❌ NOT SET'}")
+                print(f"   • Username: {'✅ SET' if username else '❌ NOT SET'}")
+                print(f"   • Password: {'✅ SET' if password else '❌ NOT SET'}")
+            else:
+                # Fall back to environment variables
+                login_url = os.environ.get('FXLEADERS_LOGIN_URL')
+                signals_url = os.environ.get('FXLEADERS_SIGNALS_URL')
+                username = os.environ.get('FXLEADERS_USERNAME')
+                password = os.environ.get('FXLEADERS_PASSWORD')
+                print(f"🔧 FXLeaders Scraper Configuration (from environment):")
+                print(f"   • Login URL: {'✅ SET' if login_url else '❌ NOT SET'}")
+                print(f"   • Signals URL: {'✅ SET' if signals_url else '❌ NOT SET'}")
+                print(f"   • Username: {'✅ SET' if username else '❌ NOT SET'}")
+                print(f"   • Password: {'✅ SET' if password else '❌ NOT SET'}")
+                
+        except Exception as e:
+            # If database query fails, use environment variables
+            print(f"⚠️  Database query failed, using environment variables: {str(e)}")
+            login_url = os.environ.get('FXLEADERS_LOGIN_URL')
+            signals_url = os.environ.get('FXLEADERS_SIGNALS_URL')
+            username = os.environ.get('FXLEADERS_USERNAME')
+            password = os.environ.get('FXLEADERS_PASSWORD')
+            print(f"🔧 FXLeaders Scraper Configuration (from environment):")
+            print(f"   • Login URL: {'✅ SET' if login_url else '❌ NOT SET'}")
+            print(f"   • Signals URL: {'✅ SET' if signals_url else '❌ NOT SET'}")
+            print(f"   • Username: {'✅ SET' if username else '❌ NOT SET'}")
+            print(f"   • Password: {'✅ SET' if password else '❌ NOT SET'}")
         
         if not all([login_url, signals_url, username, password]):
             missing = []
@@ -42,8 +76,8 @@ class FXLeadersScraper(BaseScraper):
             if not username: missing.append('FXLEADERS_USERNAME')
             if not password: missing.append('FXLEADERS_PASSWORD')
             
-            print(f"❌ Missing environment variables: {', '.join(missing)}")
-            print(f"💡 Please check your .env file or environment configuration")
+            print(f"❌ Missing configuration: {', '.join(missing)}")
+            print(f"💡 Please check your database credentials or .env file")
         
         # Extract base URL from login URL
         if login_url:
@@ -433,6 +467,8 @@ class FXLeadersScraper(BaseScraper):
                 'success': False,
                 'new_signals': 0,
                 'duplicates_skipped': 0,
+                'incomplete_signals_skipped': 0,
+                'status_updated': 0,
                 'error': error_msg
             }
         
@@ -445,6 +481,8 @@ class FXLeadersScraper(BaseScraper):
                     'success': False,
                     'new_signals': 0,
                     'duplicates_skipped': 0,
+                    'incomplete_signals_skipped': 0,
+                    'status_updated': 0,
                     'error': 'Authentication failed'
                 }
         
@@ -468,6 +506,8 @@ class FXLeadersScraper(BaseScraper):
                 'success': False,
                 'new_signals': 0,
                 'duplicates_skipped': 0,
+                'incomplete_signals_skipped': 0,
+                'status_updated': 0,
                 'error': error_msg
             }
         finally:
@@ -533,6 +573,8 @@ class FXLeadersScraper(BaseScraper):
                 'success': True,
                 'new_signals': 0,
                 'duplicates_skipped': 0,
+                'incomplete_signals_skipped': 0,
+                'status_updated': 0,
                 'message': 'No signals found on page'
             }
         
@@ -554,6 +596,8 @@ class FXLeadersScraper(BaseScraper):
                 'success': True,
                 'new_signals': 0,
                 'duplicates_skipped': 0,
+                'incomplete_signals_skipped': 0,
+                'status_updated': 0,
                 'message': '304 Not Modified - no changes'
             }
         
@@ -563,6 +607,8 @@ class FXLeadersScraper(BaseScraper):
                 'success': False,
                 'new_signals': 0,
                 'duplicates_skipped': 0,
+                'incomplete_signals_skipped': 0,
+                'status_updated': 0,
                 'error': 'Failed to get page content'
             }
         
@@ -576,6 +622,8 @@ class FXLeadersScraper(BaseScraper):
                 'success': True,
                 'new_signals': 0,
                 'duplicates_skipped': 0,
+                'incomplete_signals_skipped': 0,
+                'status_updated': 0,
                 'message': 'No signals found'
             }
         
@@ -589,7 +637,8 @@ class FXLeadersScraper(BaseScraper):
     
     def _process_signals_with_duplicate_detection(self, signals):
         """
-        Process signals with intelligent duplicate detection
+        Process signals with intelligent duplicate detection.
+        No automatic inactivation - signals stay active until manually changed or 24h passes.
         """
         print(f"🔍 Processing {len(signals)} signals with duplicate detection...")
         
@@ -597,41 +646,90 @@ class FXLeadersScraper(BaseScraper):
         existing_hashes = set(ScrapedData.objects.values_list('signal_hash', flat=True))
         print(f"📋 Loaded {len(existing_hashes)} existing signal hashes for duplicate check")
         
+        # Get active signal hashes for duplicate detection (only active signals should be considered duplicates)
+        active_hashes = set(ScrapedData.objects.filter(status_signal='Active').values_list('signal_hash', flat=True))
+        print(f"🔍 Loaded {len(active_hashes)} active signal hashes for duplicate check")
+        
         new_signals = 0
         duplicates_skipped = 0
+        incomplete_signals_skipped = 0
         
         for i, signal in enumerate(signals, 1):
+            # Check if signal has complete price data
+            entry_price = signal.get('entry_price', '')
+            take_profit = signal.get('take_profit', '')
+            stop_loss = signal.get('stop_loss', '')
+            
+            # Skip signals without complete price data
+            if entry_price == 'N/A' or take_profit == 'N/A' or stop_loss == 'N/A' or not entry_price or not take_profit or not stop_loss:
+                print(f"⚠️  Signal #{i}: INCOMPLETE PRICE DATA SKIPPED - {signal.get('instrument', 'Unknown')} {signal.get('action', '')}")
+                print(f"       💰 Entry: {entry_price}, TP: {take_profit}, SL: {stop_loss}")
+                incomplete_signals_skipped += 1
+                continue
+            
             # Generate signal hash for duplicate detection
-            signal_data = f"{signal.get('instrument', '')}_{signal.get('action', '')}_{signal.get('entry_price', '')}_{signal.get('stop_loss', '')}_{signal.get('take_profit', '')}"
+            signal_data = f"{signal.get('instrument', '')}_{signal.get('action', '')}_{entry_price}_{stop_loss}_{take_profit}"
             signal_hash = hashlib.sha256(signal_data.encode()).hexdigest()
             
-            # Check for duplicates
+            # STRONGER DUPLICATE DETECTION: Check against ALL signals (active and inactive)
             if signal_hash in existing_hashes:
-                print(f"⏭️  Signal #{i}: DUPLICATE SKIPPED - {signal.get('instrument', 'Unknown')} {signal.get('action', '')}")
+                print(f"⏭️  Signal #{i}: DUPLICATE SKIPPED - {signal.get('instrument', 'Unknown')} {signal.get('action', '')} (exists in database)")
+                duplicates_skipped += 1
+                continue
+            
+            # Additional check: if there's already ANY signal with the same data, skip it
+            existing_signal = ScrapedData.objects.filter(
+                instrument=signal.get('instrument', ''),
+                action=signal.get('action', ''),
+                entry_price=entry_price,
+                take_profit=take_profit,
+                stop_loss=stop_loss
+            ).first()
+            
+            if existing_signal:
+                print(f"⏭️  Signal #{i}: EXACT DUPLICATE SKIPPED - {signal.get('instrument', 'Unknown')} {signal.get('action', '')} (same data exists)")
                 duplicates_skipped += 1
                 continue
             
             print(f"💾 Signal #{i}: SAVING NEW - {signal.get('instrument', 'Unknown')} {signal.get('action', '')}")
+            print(f"       💰 Entry: {entry_price}, TP: {take_profit}, SL: {stop_loss}")
             print(f"       🔑 Hash: {signal_hash[:16]}...")
             
-            # Save new signal to database
+            # Save new signal to database with atomic transaction to prevent race conditions
             try:
-                scraped_data = ScrapedData(
-                    content_html=signal.get('raw_html', ''),
-                    content_text=signal['formatted_text'],
-                    source_url=self.signals_url,
-                    status='success',
-                    is_processed=True,
-                    instrument=signal.get('instrument', ''),
-                    action=signal.get('action', ''),
-                    entry_price=signal.get('entry_price', ''),
-                    take_profit=signal.get('take_profit', ''),
-                    stop_loss=signal.get('stop_loss', ''),
-                    status_signal=signal.get('status', ''),
-                    signal_hash=signal_hash
-                )
-                scraped_data.save()
-                new_signals += 1
+                with transaction.atomic():
+                    # Double-check for duplicates within the transaction
+                    existing_signal = ScrapedData.objects.filter(
+                        instrument=signal.get('instrument', ''),
+                        action=signal.get('action', ''),
+                        entry_price=entry_price,
+                        take_profit=take_profit,
+                        stop_loss=stop_loss
+                    ).first()
+                    
+                    if existing_signal:
+                        print(f"⏭️  Signal #{i}: RACE CONDITION DUPLICATE SKIPPED - {signal.get('instrument', 'Unknown')} {signal.get('action', '')} (created by another task)")
+                        duplicates_skipped += 1
+                        continue
+                    
+                    # Create and save the signal
+                    scraped_data = ScrapedData(
+                        content_html=signal.get('raw_html', ''),
+                        content_text=signal['formatted_text'],
+                        source_url=self.signals_url,
+                        status='success',
+                        is_processed=True,
+                        instrument=signal.get('instrument', ''),
+                        action=signal.get('action', ''),
+                        entry_price=entry_price,
+                        take_profit=take_profit,
+                        stop_loss=stop_loss,
+                        status_signal=signal.get('status', ''),
+                        signal_hash=signal_hash
+                    )
+                    scraped_data.save()
+                    new_signals += 1
+                    print(f"✅ Signal #{i}: SAVED SUCCESSFULLY - {signal.get('instrument', 'Unknown')} {signal.get('action', '')}")
                 
                 # Add to our in-memory set to avoid duplicates within this batch
                 existing_hashes.add(signal_hash)
@@ -644,8 +742,10 @@ class FXLeadersScraper(BaseScraper):
             'success': True,
             'new_signals': new_signals,
             'duplicates_skipped': duplicates_skipped,
+            'incomplete_signals_skipped': incomplete_signals_skipped,
+            'status_updated': 0,  # No status updates since we removed inactivation logic
             'total_processed': len(signals),
-            'message': f'Processed {len(signals)} signals: {new_signals} new, {duplicates_skipped} duplicates'
+            'message': f'Processed {len(signals)} signals: {new_signals} new, {duplicates_skipped} duplicates, {incomplete_signals_skipped} incomplete'
         }
         
         print(f"✅ Delta-scrape complete: {result['message']}")

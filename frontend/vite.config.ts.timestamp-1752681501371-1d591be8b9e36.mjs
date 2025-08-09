@@ -26,7 +26,7 @@ var vite_config_default = defineConfig({
     emptyOutDir: true
   },
   server: {
-    port: 5173,
+    port: 5174,
     host: true,
     fs: {
       strict: true,

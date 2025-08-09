@@ -15,7 +15,7 @@ def run_celery_worker():
         print("🚀 Starting Celery worker...")
         worker_process = subprocess.Popen([
             sys.executable, '-m', 'celery', '-A', 'setup', 'worker',
-            '--loglevel=info', '--concurrency=2', '--queues=scraping,default'
+            '--loglevel=info', '--concurrency=1', '--queues=scraping,default'
         ], env=dict(os.environ, DJANGO_SETTINGS_MODULE='setup.settings'))
         return worker_process
     except Exception as e:

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Settings, Play, Pause, Filter, Eye, Target, Send, Plus, Edit, Trash2, TrendingUp, AlertCircle } from 'lucide-react';
+import { Calendar, Settings, Play, Pause, Filter, Eye, Target, Send, Plus, Edit, Trash2, TrendingUp, AlertCircle, Globe, Clock, ChevronLeft, ChevronRight, RefreshCw, BarChart3, Zap } from 'lucide-react';
 import { Sidebar } from '@/components/dashboard/sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +10,18 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface DataSource {
   id: string;
@@ -55,6 +65,8 @@ interface EconomicEvent {
 export default function EconomicCalendar() {
   const [activeLayer, setActiveLayer] = useState('sources');
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
   const [treatmentConfig, setTreatmentConfig] = useState({
     filters: {
       currencies: ['USD', 'EUR'],
@@ -81,6 +93,70 @@ export default function EconomicCalendar() {
 
   const queryClient = useQueryClient();
 
+  // Mock data for demonstration
+  const mockEconomicEvents = [
+    {
+      id: 1,
+      title: "US Non-Farm Payrolls",
+      country: "United States",
+      impact: "HIGH" as const,
+      currency: "USD",
+      expected: "185K",
+      previous: "173K",
+      actual: null,
+      time: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
+      processed: false
+    },
+    {
+      id: 2,
+      title: "ECB Interest Rate Decision",
+      country: "Eurozone",
+      impact: "HIGH" as const,
+      currency: "EUR",
+      expected: "4.50%",
+      previous: "4.50%",
+      actual: null,
+      time: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4 hours from now
+      processed: false
+    },
+    {
+      id: 3,
+      title: "UK CPI Inflation",
+      country: "United Kingdom",
+      impact: "MEDIUM" as const,
+      currency: "GBP",
+      expected: "4.2%",
+      previous: "4.6%",
+      actual: null,
+      time: new Date(Date.now() + 6 * 60 * 60 * 1000), // 6 hours from now
+      processed: false
+    },
+    {
+      id: 4,
+      title: "Bank of Japan Policy Rate",
+      country: "Japan",
+      impact: "HIGH" as const,
+      currency: "JPY",
+      expected: "-0.10%",
+      previous: "-0.10%",
+      actual: null,
+      time: new Date(Date.now() + 8 * 60 * 60 * 1000), // 8 hours from now
+      processed: false
+    },
+    {
+      id: 5,
+      title: "Canadian Employment Change",
+      country: "Canada",
+      impact: "MEDIUM" as const,
+      currency: "CAD",
+      expected: "15K",
+      previous: "25K",
+      actual: null,
+      time: new Date(Date.now() + 10 * 60 * 60 * 1000), // 10 hours from now
+      processed: false
+    }
+  ];
+
   // Queries
   const { data: dataSources = [] } = useQuery({
     queryKey: ['/api/data-sources'],
@@ -97,7 +173,7 @@ export default function EconomicCalendar() {
     queryFn: () => apiRequest('/api/posting-rules?moduleType=economic')
   });
 
-  const { data: economicEvents = [] } = useQuery({
+  const { data: economicEvents = mockEconomicEvents } = useQuery({
     queryKey: ['/api/economic-events/today'],
     queryFn: () => apiRequest('/api/economic-events/today')
   });
@@ -154,6 +230,36 @@ export default function EconomicCalendar() {
     saveConfigMutation.mutate(config);
   };
 
+  const getImpactColor = (impact: string) => {
+    switch (impact) {
+      case 'HIGH': return 'bg-red-100 text-red-800 border-red-200';
+      case 'MEDIUM': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'LOW': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const formatTimeAgo = (date: Date) => {
+    const now = new Date();
+    const diffMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  const formatEventTime = (date: Date) => {
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
   const PostingRuleForm = ({ onSave, onCancel }: any) => {
     const [ruleData, setRuleData] = useState({
       id: `rule_${Date.now()}`,
@@ -177,7 +283,7 @@ export default function EconomicCalendar() {
     };
 
     return (
-      <Card className="mt-4">
+      <Card className="mt-4 bg-white border border-slate-200 shadow-xl">
         <CardHeader>
           <CardTitle>Create Posting Rule</CardTitle>
           <CardDescription>Define when and where to post economic calendar content</CardDescription>
@@ -370,45 +476,71 @@ export default function EconomicCalendar() {
     return matchesCurrency && matchesImpact;
   });
 
+  // Pagination
+  const totalPages = Math.ceil(filteredEvents.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-slate-200 px-6 py-4">
+        <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 px-8 py-6 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-blue-600" />
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Calendar className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-semibold text-slate-900">Economic Calendar</h1>
-                <p className="text-sm text-slate-600 mt-1">Automate economic news posting with AI-powered content generation</p>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                  Economic Calendar
+                </h1>
+                <p className="text-sm text-slate-600 mt-1 font-medium">
+                  Automated economic news posting with AI-powered content generation
+                </p>
               </div>
             </div>
             <div className="flex items-center space-x-3">
-              <Badge variant={economicConfig?.enabled ? 'default' : 'secondary'}>
+              <Button 
+                variant="outline"
+                className="border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+              <Badge variant={economicConfig?.enabled ? 'default' : 'secondary'} className="bg-gradient-to-r from-green-500 to-green-600 text-white">
                 {economicConfig?.enabled ? 'Active' : 'Inactive'}
               </Badge>
-              <Button onClick={saveConfiguration} disabled={saveConfigMutation.isPending}>
+              <Button 
+                onClick={saveConfiguration} 
+                disabled={saveConfigMutation.isPending}
+                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                <Zap className="w-4 h-4 mr-2" />
                 {saveConfigMutation.isPending ? 'Saving...' : 'Save Configuration'}
               </Button>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6">
-          <Tabs value={activeLayer} onValueChange={setActiveLayer} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="sources" className="flex items-center gap-2">
-                <Settings className="w-4 h-4" />
+        <main className="flex-1 overflow-y-auto p-8">
+          <Tabs value={activeLayer} onValueChange={setActiveLayer} className="space-y-8">
+            <TabsList className="grid w-full grid-cols-3 bg-white/60 backdrop-blur-sm border border-slate-200/60 shadow-sm">
+              <TabsTrigger value="sources" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-200">
+                <Settings className="w-4 h-4 mr-2" />
                 Sources
               </TabsTrigger>
-              <TabsTrigger value="treatment" className="flex items-center gap-2">
-                <Filter className="w-4 h-4" />
+              <TabsTrigger value="treatment" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-200">
+                <Filter className="w-4 h-4 mr-2" />
                 Treatment
               </TabsTrigger>
-              <TabsTrigger value="posting" className="flex items-center gap-2">
-                <Send className="w-4 h-4" />
+              <TabsTrigger value="posting" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-200">
+                <Send className="w-4 h-4 mr-2" />
                 Posting
               </TabsTrigger>
             </TabsList>
@@ -419,7 +551,7 @@ export default function EconomicCalendar() {
                 <p className="text-sm text-slate-600 mb-4">Select and configure economic calendar data sources</p>
               </div>
 
-              <Card>
+              <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                 <CardHeader>
                   <CardTitle>Available Sources</CardTitle>
                   <CardDescription>Choose from configured economic calendar sources</CardDescription>
@@ -474,7 +606,7 @@ export default function EconomicCalendar() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                 <CardHeader>
                   <CardTitle>Source Health</CardTitle>
                   <CardDescription>Monitor data source performance and reliability</CardDescription>
@@ -505,7 +637,7 @@ export default function EconomicCalendar() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
-                <Card>
+                <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                   <CardHeader>
                     <CardTitle>Content Filters</CardTitle>
                     <CardDescription>Define which economic events to process</CardDescription>
@@ -620,7 +752,7 @@ export default function EconomicCalendar() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                   <CardHeader>
                     <CardTitle>Content Generation</CardTitle>
                     <CardDescription>AI-powered content enhancement settings</CardDescription>
@@ -641,6 +773,7 @@ export default function EconomicCalendar() {
                             ai_enhancement: checked
                           }
                         })}
+                        className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-slate-200"
                       />
                     </div>
 
@@ -659,6 +792,7 @@ export default function EconomicCalendar() {
                             include_analysis: checked
                           }
                         })}
+                        className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-slate-200"
                       />
                     </div>
 
@@ -677,13 +811,14 @@ export default function EconomicCalendar() {
                             add_market_context: checked
                           }
                         })}
+                        className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-slate-200"
                       />
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
-              <Card>
+              <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                 <CardHeader>
                   <CardTitle>Filtered Events Preview</CardTitle>
                   <CardDescription>Events matching your current filter settings</CardDescription>
@@ -732,11 +867,216 @@ export default function EconomicCalendar() {
                   <h2 className="text-xl font-semibold text-slate-900 mb-2">Posting Rules</h2>
                   <p className="text-sm text-slate-600">Configure when and where to publish economic calendar content</p>
                 </div>
-                <Button onClick={() => setShowRuleForm(true)} className="flex items-center gap-2">
+                <Button 
+                  onClick={() => setShowRuleForm(true)} 
+                  className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                >
                   <Plus className="w-4 h-4" />
                   Add Rule
                 </Button>
               </div>
+
+              {/* Event Template Configuration */}
+              <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center shadow-md">
+                      <Edit className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                      Event Template
+                    </span>
+                  </CardTitle>
+                  <CardDescription>
+                    Customize the template for economic event posts. Use placeholders like {'{title}'}, {'{currency}'}, {'{impact}'}, etc.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="event-template" className="text-sm font-medium text-slate-700 mb-2 block">
+                          Template Content
+                        </Label>
+                        <Textarea
+                          id="event-template"
+                          rows={12}
+                          placeholder="⚡ NEW Event: {title} - {currency}
+📅 Time: {time}
+🌍 Country: {country}
+📊 Impact: {impact}
+
+📈 Expected: {expected}
+📉 Previous: {previous}
+✅ Actual: {actual}
+
+💡 Market Impact: {analysis}
+🎯 Key Levels: {levels}
+
+#EconomicEvent #{currency} #Forex #Trading"
+                          defaultValue="⚡ NEW Event: {title} - {currency}
+📅 Time: {time}
+🌍 Country: {country}
+📊 Impact: {impact}
+
+📈 Expected: {expected}
+📉 Previous: {previous}
+✅ Actual: {actual}
+
+💡 Market Impact: {analysis}
+🎯 Key Levels: {levels}
+
+#EconomicEvent #{currency} #Forex #Trading"
+                          className="font-mono text-sm border-slate-200 focus:border-green-500"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label htmlFor="include-analysis" className="text-sm font-medium text-slate-700">
+                            Include AI Analysis
+                          </Label>
+                          <p className="text-xs text-slate-600 mt-1">
+                            Add AI-generated market impact analysis
+                          </p>
+                        </div>
+                        <Switch
+                          id="include-analysis"
+                          defaultChecked
+                          className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-slate-200"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-sm font-medium text-slate-700 mb-3 block">
+                          Target Platforms
+                        </Label>
+                        <div className="space-y-3">
+                          {[
+                            { id: 'telegram', name: 'Telegram', icon: '📱', defaultChecked: true, description: 'Share to Telegram channels' },
+                            { id: 'discord', name: 'Discord', icon: '🎮', defaultChecked: true, description: 'Post to Discord servers' },
+                            { id: 'twitter', name: 'X (Twitter)', icon: '🐦', defaultChecked: true, description: 'Tweet to Twitter/X' },
+                            { id: 'linkedin', name: 'LinkedIn', icon: '💼', defaultChecked: false, description: 'Share to LinkedIn' },
+                            { id: 'facebook', name: 'Facebook', icon: '📘', defaultChecked: false, description: 'Post to Facebook' },
+                            { id: 'instagram', name: 'Instagram', icon: '📷', defaultChecked: false, description: 'Share to Instagram Stories' },
+                            { id: 'website', name: 'Website', icon: '🌐', defaultChecked: false, description: 'Publish to website/blog' },
+                            { id: 'email', name: 'Email', icon: '📧', defaultChecked: false, description: 'Send email newsletters' }
+                          ].map((platform) => (
+                            <div key={platform.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white text-sm font-bold">
+                                  {platform.icon}
+                                </div>
+                                <div>
+                                  <Label htmlFor={`platform-${platform.id}`} className="font-medium text-slate-900 cursor-pointer">
+                                    {platform.name}
+                                  </Label>
+                                  <p className="text-xs text-slate-600">{platform.description}</p>
+                                </div>
+                              </div>
+                              <Switch 
+                                id={`platform-${platform.id}`} 
+                                defaultChecked={platform.defaultChecked}
+                                className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-slate-200"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label htmlFor="auto-post" className="text-sm font-medium text-slate-700">
+                            Auto-Post Events
+                          </Label>
+                          <p className="text-xs text-slate-600 mt-1">
+                            Automatically post events when they occur
+                          </p>
+                        </div>
+                        <Switch
+                          id="auto-post"
+                          defaultChecked
+                          className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-slate-200"
+                        />
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <Label className="text-sm font-medium text-slate-700 mb-3 block">
+                            Available Placeholders
+                          </Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { placeholder: '{title}', description: 'Event title' },
+                              { placeholder: '{currency}', description: 'Currency code' },
+                              { placeholder: '{country}', description: 'Country name' },
+                              { placeholder: '{impact}', description: 'Impact level' },
+                              { placeholder: '{time}', description: 'Event time' },
+                              { placeholder: '{expected}', description: 'Expected value' },
+                              { placeholder: '{previous}', description: 'Previous value' },
+                              { placeholder: '{actual}', description: 'Actual value' },
+                              { placeholder: '{analysis}', description: 'AI analysis' },
+                              { placeholder: '{levels}', description: 'Key levels' },
+                              { placeholder: '{date}', description: 'Event date' },
+                              { placeholder: '{source}', description: 'Data source' }
+                            ].map((item) => (
+                              <div key={item.placeholder} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-200">
+                                <code className="text-xs font-mono text-green-600 bg-green-50 px-1 py-0.5 rounded">
+                                  {item.placeholder}
+                                </code>
+                                <span className="text-xs text-slate-600">{item.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-sm font-medium text-slate-700 mb-3 block">
+                            Template Preview
+                          </Label>
+                          <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                            <div className="text-sm text-slate-700 space-y-1">
+                              <div>⚡ NEW Event: US Non-Farm Payrolls - USD</div>
+                              <div>📅 Time: Dec 15, 2:30 PM EST</div>
+                              <div>🌍 Country: United States</div>
+                              <div>📊 Impact: HIGH</div>
+                              <div className="mt-2">
+                                <div>📈 Expected: 185K</div>
+                                <div>📉 Previous: 173K</div>
+                                <div>✅ Actual: 200K</div>
+                              </div>
+                              <div className="mt-2">
+                                <div>💡 Market Impact: Strong employment data suggests...</div>
+                                <div>🎯 Key Levels: 1.0850, 1.0800</div>
+                              </div>
+                              <div className="mt-2 text-green-600">
+                                #EconomicEvent #USD #Forex #Trading
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                      <div className="flex items-center space-x-4">
+                        <Button variant="outline" size="sm" className="border-slate-200 hover:bg-slate-50">
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Reset to Default
+                        </Button>
+                        <Button variant="outline" size="sm" className="border-slate-200 hover:bg-slate-50">
+                          <Eye className="w-4 h-4 mr-2" />
+                          Preview
+                        </Button>
+                      </div>
+                      <Button className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200">
+                        <Zap className="w-4 h-4 mr-2" />
+                        Save Template
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
               {showRuleForm && (
                 <PostingRuleForm
@@ -747,19 +1087,22 @@ export default function EconomicCalendar() {
 
               <div className="grid gap-4">
                 {postingRules.length === 0 ? (
-                  <Card>
+                  <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                     <CardContent className="text-center py-8">
                       <Target className="w-12 h-12 text-slate-400 mx-auto mb-4" />
                       <h3 className="text-lg font-medium text-slate-900 mb-2">No posting rules configured</h3>
                       <p className="text-slate-600 mb-4">Create posting rules to automate content distribution</p>
-                      <Button onClick={() => setShowRuleForm(true)}>
+                      <Button 
+                        onClick={() => setShowRuleForm(true)}
+                        className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+                      >
                         Create First Rule
                       </Button>
                     </CardContent>
                   </Card>
                 ) : (
                   postingRules.map((rule: PostingRule) => (
-                    <Card key={rule.id}>
+                    <Card key={rule.id} className="bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-lg">
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <div>

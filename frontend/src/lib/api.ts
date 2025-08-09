@@ -176,4 +176,128 @@ export const api = {
       throw error;
     }
   },
+
+  // Scraper Credentials API
+  getScraperCredentials: async (): Promise<any[]> => {
+    try {
+      const response = await fetch(buildApiUrl('/api/scraper-credentials/'), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data.results || [];
+    } catch (error) {
+      console.error('Error fetching scraper credentials:', error);
+      throw error;
+    }
+  },
+
+  getScraperCredential: async (id: number): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/scraper-credentials/${id}/`), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching scraper credential:', error);
+      throw error;
+    }
+  },
+
+  createScraperCredential: async (credential: any): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl('/api/scraper-credentials/'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credential),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error creating scraper credential:', error);
+      throw error;
+    }
+  },
+
+  updateScraperCredential: async (id: number, credential: any): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/scraper-credentials/${id}/`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credential),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating scraper credential:', error);
+      throw error;
+    }
+  },
+
+  deleteScraperCredential: async (id: number): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/scraper-credentials/${id}/`), {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return { success: true, message: 'Credential deleted successfully' };
+    } catch (error) {
+      console.error('Error deleting scraper credential:', error);
+      throw error;
+    }
+  },
+
+  testScraperCredential: async (id: number): Promise<any> => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/scraper-credentials/${id}/test/`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error testing scraper credential:', error);
+      throw error;
+    }
+  },
 };

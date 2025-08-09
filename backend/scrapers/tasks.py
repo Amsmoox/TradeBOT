@@ -9,6 +9,8 @@ from datetime import timedelta
 from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
 import json
 import os
+from django.db import transaction
+from django.core.cache import cache
 
 # Load environment variables first
 from dotenv import load_dotenv
@@ -20,6 +22,69 @@ from .services.fxleaders_scraper import FXLeadersScraper
 from scrapers.management.commands.fxevent_scraper import Command as FxEventScraperCommand
 
 logger = logging.getLogger(__name__)
+
+# Database-based lock model
+class ScrapingLock:
+    """Database-based lock for preventing multiple scraping tasks from running simultaneously"""
+    
+    @staticmethod
+    def acquire_lock(task_id, timeout_minutes=5):
+        """Try to acquire a lock for scraping"""
+        try:
+            with transaction.atomic():
+                # Check if there's an existing lock
+                existing_lock = ScrapingWatermark.objects.filter(
+                    source='fxleaders_lock'
+                ).first()
+                
+                if existing_lock:
+                    # Check if lock is expired
+                    lock_age = timezone.now() - existing_lock.updated_at
+                    if lock_age.total_seconds() < timeout_minutes * 60:
+                        return False, f"Lock held by {existing_lock.last_etag} (age: {lock_age.total_seconds():.1f}s)"
+                
+                # Create or update lock
+                lock, created = ScrapingWatermark.objects.get_or_create(
+                    source='fxleaders_lock',
+                    defaults={
+                        'last_timestamp': timezone.now(),
+                        'last_etag': task_id,
+                        'last_modified': timezone.now(),
+                        'scrape_interval': timeout_minutes * 60,
+                        'consecutive_no_changes': 0
+                    }
+                )
+                
+                if not created:
+                    # Update existing lock
+                    lock.last_timestamp = timezone.now()
+                    lock.last_etag = task_id
+                    lock.last_modified = timezone.now()
+                    lock.save()
+                
+                return True, f"Lock acquired by {task_id}"
+                
+        except Exception as e:
+            return False, f"Lock acquisition failed: {str(e)}"
+    
+    @staticmethod
+    def release_lock(task_id):
+        """Release the scraping lock"""
+        try:
+            with transaction.atomic():
+                lock = ScrapingWatermark.objects.filter(
+                    source='fxleaders_lock',
+                    last_etag=task_id
+                ).first()
+                
+                if lock:
+                    lock.delete()
+                    return True, f"Lock released by {task_id}"
+                else:
+                    return False, f"No lock found for {task_id}"
+                    
+        except Exception as e:
+            return False, f"Lock release failed: {str(e)}"
 
 @shared_task(bind=True, max_retries=3, name='scrapers.tasks.intelligent_delta_scrape_task')
 def intelligent_delta_scrape_task(self):
@@ -33,6 +98,22 @@ def intelligent_delta_scrape_task(self):
         task_id = self.request.id[:8]
     
     print(f"\n🚀 [Task {task_id}] ========== STARTING INTELLIGENT DELTA-SCRAPE ==========")
+    print(f"🔒 [Task {task_id}] Checking for running instances...")
+    
+    # Try to acquire lock
+    lock_acquired, lock_message = ScrapingLock.acquire_lock(task_id)
+    if not lock_acquired:
+        print(f"⏳ [Task {task_id}] Another scraping task is already running. Skipping...")
+        print(f"🔒 [Task {task_id}] Lock message: {lock_message}")
+        return {
+            'success': True,
+            'skipped': True,
+            'message': 'Skipped: Another scraping task is already running',
+            'task_id': task_id
+        }
+    
+    print(f"🔒 [Task {task_id}] Lock acquired successfully")
+    
     print(f"🕒 [Task {task_id}] Timestamp: {timezone.now()}")
     print(f"🔧 [Task {task_id}] Python PID: {os.getpid()}")
     print(f"📍 [Task {task_id}] Worker info: {self.request.hostname if hasattr(self, 'request') and self.request else 'Unknown'}")
@@ -95,6 +176,13 @@ def intelligent_delta_scrape_task(self):
             'error': error_msg,
             'retries_exhausted': True
         }
+    finally:
+        # Always release the lock
+        try:
+            ScrapingLock.release_lock(task_id)
+            print(f"🔓 [Task {task_id}] Lock released successfully")
+        except Exception as lock_error:
+            print(f"⚠️  [Task {task_id}] Failed to release lock: {str(lock_error)}")
 
 @shared_task(name='scrapers.tasks.setup_periodic_scraping')
 def setup_periodic_scraping():
@@ -158,6 +246,22 @@ def setup_periodic_scraping():
         
         if created:
             print("✅ Created cleanup task for old signals")
+        
+        # Setup auto-inactivation task (runs every hour)
+        auto_inactivate_task, created = PeriodicTask.objects.get_or_create(
+            name="Auto-Inactivate Old Signals",
+            defaults={
+                'task': 'scrapers.tasks.auto_inactivate_old_signals_task',
+                'interval': cleanup_interval,  # Same interval as cleanup (every hour)
+                'enabled': True,
+                'description': 'Automatically mark signals as inactive after 24 hours',
+                'kwargs': json.dumps({}),
+                'queue': 'scraping'
+            }
+        )
+        
+        if created:
+            print("✅ Created auto-inactivation task for old signals")
         
         # Setup event scraping tasks
         # setup_event_periodic_tasks()  # DISABLED: replaced by per-event scheduling
@@ -224,6 +328,56 @@ def cleanup_old_signals_task(days_to_keep=7):
             'success': False,
             'error': error_msg,
             'deleted_count': 0
+        }
+
+@shared_task(name='scrapers.tasks.auto_inactivate_old_signals_task')
+def auto_inactivate_old_signals_task():
+    """
+    Automatically mark signals as inactive after 24 hours.
+    This runs every hour to check for signals that should be inactivated.
+    """
+    print("⏰ Starting automatic inactivation of signals older than 24 hours...")
+    
+    try:
+        # Calculate cutoff time (24 hours ago)
+        cutoff_time = timezone.now() - timedelta(hours=24)
+        
+        # Find active signals older than 24 hours
+        old_active_signals = ScrapedData.objects.filter(
+            status_signal='Active',
+            scrape_date__lt=cutoff_time
+        )
+        
+        old_signals_count = old_active_signals.count()
+        
+        if old_signals_count == 0:
+            print("✅ No old active signals to inactivate")
+            return {
+                'success': True,
+                'inactivated_count': 0,
+                'message': 'No old active signals found'
+            }
+        
+        # Mark them as inactive
+        inactivated_count = old_active_signals.update(status_signal='Inactive')
+        
+        print(f"✅ Automatically inactivated {inactivated_count} signals (older than 24 hours)")
+        
+        return {
+            'success': True,
+            'inactivated_count': inactivated_count,
+            'cutoff_time': cutoff_time.isoformat(),
+            'message': f'Inactivated {inactivated_count} signals older than 24 hours'
+        }
+        
+    except Exception as e:
+        error_msg = f"Auto-inactivation task failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        logger.error(error_msg)
+        return {
+            'success': False,
+            'error': error_msg,
+            'inactivated_count': 0
         }
 
 def adjust_scraping_interval(new_signals_count):
